@@ -62,18 +62,16 @@ export default function SendTokensScreen() {
     return [
       { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
       { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
-      { name: 'Remorse Purse', balance: wallet.remorse_purse, color: '#EF4444', key: 'remorse' },
     ];
   };
 
   const getSelfTransferPurses = () => {
-    // For self-transfer, show only the three main purses
+    // For self-transfer, show only base and reward purses
     if (!wallet) return [];
     
     return [
       { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
       { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
-      { name: 'Remorse Purse', balance: wallet.remorse_purse, color: '#EF4444', key: 'remorse' },
     ];
   };
 

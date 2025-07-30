@@ -3,7 +3,6 @@ import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGoals } from '@/hooks/useApi';
 import { walletAPI, goalsAPI } from '@/services/apiServices';
-import api from '@/services/api';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -21,9 +20,6 @@ import { Calendar } from 'react-native-calendars';
 interface Wallet {
   id: string;
   user_id: string;
-  discipline_purse: number;
-  focus_purse: number;
-  mindfulness_purse: number;
   base_purse: number;
   reward_purse: number;
   remorse_purse: number;
@@ -224,8 +220,7 @@ export default function DashboardScreen() {
           <ThemedText style={styles.portfolioLabel}>Total Portfolio</ThemedText>
           <ThemedText style={styles.portfolioValue}>
             {wallet ? 
-              (wallet.discipline_purse + wallet.focus_purse + wallet.mindfulness_purse + 
-               (wallet.base_purse || 0) + (wallet.reward_purse || 0) + (wallet.remorse_purse || 0)) : 0
+              ((wallet.base_purse || 0) + (wallet.reward_purse || 0) + (wallet.remorse_purse || 0)) : 0
             }
           </ThemedText>
         </View>
