@@ -2,10 +2,8 @@ import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGoals } from '@/hooks/useApi';
-import { walletAPI } from '@/services/apiServices';
-import api from '@/services/api';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -15,55 +13,10 @@ import {
     Alert,
 } from 'react-native';
 
-interface Wallet {
-  id: string;
-  user_id: string;
-  discipline_purse: number;
-  focus_purse: number;
-  mindfulness_purse: number;
-  created_at: string;
-  updated_at: string;
-}
-
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
   const { goals, loading } = useGoals();
   const router = useRouter();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [walletLoading, setWalletLoading] = useState(true);
-
-  useEffect(() => {
-    fetchWallet();
-  }, []);
-
-  const fetchWallet = async () => {
-    try {
-      setWalletLoading(true);
-      const walletData = await walletAPI.getWallet();
-      setWallet(walletData);
-    } catch (error) {
-      console.error('Error fetching wallet:', error);
-    } finally {
-      setWalletLoading(false);
-    }
-  };
-
-  const testNetworkConnection = async () => {
-    try {
-      Alert.alert('Testing Connection', 'Testing network connection to backend...');
-      const response = await api.get('/goals/default');
-      Alert.alert(
-        'Connection Success! ✅', 
-        `Successfully connected to backend!\nFound ${response.data.length} default goals.`
-      );
-    } catch (error: any) {
-      console.error('Network test failed:', error);
-      Alert.alert(
-        'Connection Failed ❌', 
-        `Could not connect to backend:\n${error.message}\n\nCheck if backend is running and network is accessible.`
-      );
-    }
-  };
 
   const handleLogout = async () => {
     Alert.alert(
@@ -84,7 +37,7 @@ export default function DashboardScreen() {
     router.push('/charity');
   };
 
-  if (loading || walletLoading) {
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
@@ -101,14 +54,9 @@ export default function DashboardScreen() {
           <ThemedText style={styles.welcomeText}>Welcome back!</ThemedText>
           <ThemedText style={styles.emailText}>{user?.email}</ThemedText>
         </View>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.testButton} onPress={testNetworkConnection}>
-            <ThemedText style={styles.testButtonText}>Test API</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <ThemedText style={styles.logoutText}>Logout</ThemedText>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <ThemedText style={styles.logoutText}>Logout</ThemedText>
+        </TouchableOpacity>
       </View>
 
       {/* Wallet Overview */}
@@ -117,21 +65,15 @@ export default function DashboardScreen() {
         <View style={styles.walletGrid}>
           <View style={[styles.walletCard, { backgroundColor: Colors.light.primary }]}>
             <ThemedText style={styles.walletName}>Discipline</ThemedText>
-            <ThemedText style={styles.walletBalance}>
-              {wallet?.discipline_purse || 0}
-            </ThemedText>
+            <ThemedText style={styles.walletBalance}>0</ThemedText>
           </View>
           <View style={[styles.walletCard, { backgroundColor: Colors.light.accent }]}>
             <ThemedText style={styles.walletName}>Focus</ThemedText>
-            <ThemedText style={styles.walletBalance}>
-              {wallet?.focus_purse || 0}
-            </ThemedText>
+            <ThemedText style={styles.walletBalance}>0</ThemedText>
           </View>
           <View style={[styles.walletCard, { backgroundColor: Colors.light.success }]}>
             <ThemedText style={styles.walletName}>Mindfulness</ThemedText>
-            <ThemedText style={styles.walletBalance}>
-              {wallet?.mindfulness_purse || 0}
-            </ThemedText>
+            <ThemedText style={styles.walletBalance}>0</ThemedText>
           </View>
         </View>
       </View>
@@ -337,20 +279,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: Colors.light.icon,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  testButton: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  testButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

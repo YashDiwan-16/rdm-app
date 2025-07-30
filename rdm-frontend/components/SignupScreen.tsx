@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -18,7 +19,7 @@ export function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { signup, isLoading } = useAuth();
   const router = useRouter();
 
   const validateForm = () => {
@@ -48,22 +49,12 @@ export function SignupScreen() {
   const handleSignup = async () => {
     if (!validateForm()) return;
 
-    setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert(
-        'Success',
-        'Account created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/dashboard'),
-          },
-        ]
-      );
-    }, 1000);
+    try {
+      await signup({ email, password });
+      // Navigation is handled by AuthContext
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Signup failed');
+    }
   };
 
   const navigateToLogin = () => {
@@ -128,12 +119,12 @@ export function SignupScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, isLoading && styles.buttonDisabled]}
               onPress={handleSignup}
-              disabled={loading}
+              disabled={isLoading}
             >
               <ThemedText style={styles.buttonText}>
-                {loading ? 'Creating Account...' : 'Create Account'}
+                {isLoading ? 'Creating Account...' : 'Create Account'}
               </ThemedText>
             </TouchableOpacity>
           </View>

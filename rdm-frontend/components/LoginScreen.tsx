@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -17,7 +18,7 @@ import {
 export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { login, isLoading } = useAuth();
   const router = useRouter();
 
   const handleLogin = async () => {
@@ -31,14 +32,12 @@ export function LoginScreen() {
       return;
     }
 
-    setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      // Navigate to dashboard after successful login
-      router.replace('/dashboard');
-    }, 1000);
+    try {
+      await login({ email, password });
+      // Navigation is handled by AuthContext
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Login failed');
+    }
   };
 
   const navigateToSignup = () => {
@@ -90,12 +89,12 @@ export function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, isLoading && styles.buttonDisabled]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={isLoading}
             >
               <ThemedText style={styles.buttonText}>
-                {loading ? 'Signing In...' : 'Sign In'}
+                {isLoading ? 'Signing In...' : 'Sign In'}
               </ThemedText>
             </TouchableOpacity>
           </View>

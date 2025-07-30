@@ -98,6 +98,69 @@ router.get('/goals/default', async (_req: Request, res: Response) => {
   res.json(data);
 });
 
+// Seed default goals (for development)
+router.post('/goals/seed', async (_req: Request, res: Response) => {
+  const defaultGoals = [
+    {
+      name: '10 Minutes Meditation',
+      description: 'Practice mindfulness meditation for 10 minutes',
+      associated_tokens: 20,
+      target_time: '2025-12-31T23:59:59',
+      is_default: true
+    },
+    {
+      name: 'Drink 2L Water',
+      description: 'Stay hydrated by drinking 2 liters of water throughout the day',
+      associated_tokens: 15,
+      target_time: '2025-12-31T23:59:59',
+      is_default: true
+    },
+    {
+      name: 'Read 20 Pages',
+      description: 'Expand your knowledge by reading 20 pages of a book',
+      associated_tokens: 25,
+      target_time: '2025-12-31T23:59:59',
+      is_default: true
+    },
+    {
+      name: 'Walk 5000 Steps',
+      description: 'Stay active by walking at least 5000 steps',
+      associated_tokens: 18,
+      target_time: '2025-12-31T23:59:59',
+      is_default: true
+    },
+    {
+      name: 'Practice Gratitude',
+      description: 'Write down 3 things you are grateful for today',
+      associated_tokens: 12,
+      target_time: '2025-12-31T23:59:59',
+      is_default: true
+    }
+  ];
+
+  const { data, error } = await supabase
+    .from('goals')
+    .insert(defaultGoals)
+    .select();
+
+  if (error) return res.status(400).json({ error });
+  res.json({ message: 'Default goals seeded successfully', goals: data });
+});
+
+// Get user's wallet
+router.get('/wallet', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+
+  const { data, error } = await supabase
+    .from('wallets')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (error) return res.status(400).json({ error });
+  res.json(data);
+});
+
 // Complete goal
 router.post('/goals/complete', authMiddleware, async (req: AuthRequest, res: Response) => {
   const { goal_id, completed } = req.body;
