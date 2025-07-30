@@ -20,7 +20,15 @@ router.post('/signup', async (req: Request, res: Response) => {
   if (error) return res.status(400).json({ error });
 
   const user = data?.[0];
-  await supabase.from('wallets').insert([{ user_id: user.id }]);
+  await supabase.from('wallets').insert([{ 
+    user_id: user.id,
+    discipline_purse: 0,
+    focus_purse: 0,
+    mindfulness_purse: 0,
+    base_purse: 0,
+    reward_purse: 0,
+    remorse_purse: 0
+  }]);
 
   const token = jwt.sign({ id: user.id, email }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token });
