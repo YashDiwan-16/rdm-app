@@ -1,7 +1,7 @@
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Alert,
     ScrollView,
@@ -9,31 +9,88 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
+import { walletAPI } from '@/services/apiServices';
 
-interface TokenWallet {
-  name: string;
-  balance: number;
-  color: string;
+interface Wallet {
+  id: string;
+  user_id: string;
+  discipline_purse: number;
+  focus_purse: number;
+  mindfulness_purse: number;
+  base_purse: number;
+  reward_purse: number;
+  remorse_purse: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export default function SendTokensScreen() {
   const [sendMode, setSendMode] = useState<'self' | 'others'>('self');
   const [selectedPurse, setSelectedPurse] = useState('');
+  const [fromPurse, setFromPurse] = useState('');
   const [amount, setAmount] = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientAddress, setRecipientAddress] = useState('');
   const [showPurseDropdown, setShowPurseDropdown] = useState(false);
-  
-  const [wallets] = useState<TokenWallet[]>([
-    { name: 'Base Purse', balance: 150, color: Colors.light.accent },
-    { name: 'Reward Purse', balance: 75, color: Colors.light.success },
-  ]);
+  const [showFromPurseDropdown, setShowFromPurseDropdown] = useState(false);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [transferLoading, setTransferLoading] = useState(false);
 
-  const handleSendTokens = () => {
+  useEffect(() => {
+    fetchWallet();
+  }, []);
+
+  const fetchWallet = async () => {
+    try {
+      setLoading(true);
+      const walletData = await walletAPI.getWallet();
+      setWallet(walletData);
+    } catch (error) {
+      console.error('Error fetching wallet:', error);
+      Alert.alert('Error', 'Failed to load wallet data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAvailablePurses = () => {
+    if (!wallet) return [];
+    
+    return [
+      { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
+      { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
+      { name: 'Remorse Purse', balance: wallet.remorse_purse, color: '#EF4444', key: 'remorse' },
+    ];
+  };
+
+  const getSelfTransferPurses = () => {
+    // For self-transfer, show only the three main purses
+    if (!wallet) return [];
+    
+    return [
+      { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
+      { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
+      { name: 'Remorse Purse', balance: wallet.remorse_purse, color: '#EF4444', key: 'remorse' },
+    ];
+  };
+
+  const getFromPurses = () => {
+    // For any transfer, show all purses with balance > 0
+    return getAvailablePurses().filter(purse => purse.balance > 0);
+  };
+
+  const handleSendTokens = async () => {
     if (sendMode === 'self') {
-      if (!selectedPurse || !amount) {
-        Alert.alert('Error', 'Please select a purse and enter an amount');
+      if (!selectedPurse || !fromPurse || !amount) {
+        Alert.alert('Error', 'Please select source and destination purses and enter an amount');
+        return;
+      }
+      
+      if (selectedPurse === fromPurse) {
+        Alert.alert('Error', 'Source and destination purses cannot be the same');
         return;
       }
       
@@ -42,10 +99,37 @@ export default function SendTokensScreen() {
         Alert.alert('Error', 'Please enter a valid amount');
         return;
       }
-      
-      Alert.alert('Success!', `${amount} tokens sent to your ${selectedPurse}!`);
+
+      const sourcePurse = getFromPurses().find(p => p.key === fromPurse);
+      if (!sourcePurse || sourcePurse.balance < numAmount) {
+        Alert.alert('Error', 'Insufficient balance in source purse');
+        return;
+      }
+
+      try {
+        setTransferLoading(true);
+        await walletAPI.transferTokens({
+          to_purse: selectedPurse,
+          from_purse: fromPurse,
+          amount: numAmount,
+          type: 'self-transfer'
+        });
+        
+        Alert.alert('Success!', `${amount} tokens transferred from ${sourcePurse.name} to ${getSelfTransferPurses().find(p => p.key === selectedPurse)?.name}!`);
+        await fetchWallet(); // Refresh wallet data
+        
+        // Reset form
+        setAmount('');
+        setSelectedPurse('');
+        setFromPurse('');
+      } catch (error) {
+        console.error('Transfer error:', error);
+        Alert.alert('Error', 'Failed to transfer tokens');
+      } finally {
+        setTransferLoading(false);
+      }
     } else {
-      if (!recipientName.trim() || !recipientAddress.trim() || !amount) {
+      if (!recipientName.trim() || !recipientAddress.trim() || !amount || !fromPurse) {
         Alert.alert('Error', 'Please fill in all fields');
         return;
       }
@@ -55,16 +139,48 @@ export default function SendTokensScreen() {
         Alert.alert('Error', 'Please enter a valid amount');
         return;
       }
-      
-      Alert.alert('Success!', `${amount} tokens sent to ${recipientName}!`);
+
+      const sourcePurse = getFromPurses().find(p => p.key === fromPurse);
+      if (!sourcePurse || sourcePurse.balance < numAmount) {
+        Alert.alert('Error', 'Insufficient balance in source purse');
+        return;
+      }
+
+      try {
+        setTransferLoading(true);
+        await walletAPI.transferTokens({
+          to_user_id: recipientAddress, // Using address as user ID for now
+          to_purse: 'base', // Default to base purse for external transfers
+          from_purse: fromPurse,
+          amount: numAmount,
+          type: 'peer'
+        });
+        
+        Alert.alert('Success!', `${amount} tokens sent to ${recipientName}!`);
+        await fetchWallet(); // Refresh wallet data
+        
+        // Reset form
+        setAmount('');
+        setRecipientName('');
+        setRecipientAddress('');
+        setFromPurse('');
+      } catch (error) {
+        console.error('Transfer error:', error);
+        Alert.alert('Error', 'Failed to send tokens. Please check recipient address.');
+      } finally {
+        setTransferLoading(false);
+      }
     }
-    
-    // Reset form
-    setAmount('');
-    setRecipientName('');
-    setRecipientAddress('');
-    setSelectedPurse('');
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <ThemedText style={styles.loadingText}>Loading wallet...</ThemedText>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -111,18 +227,63 @@ export default function SendTokensScreen() {
         {sendMode === 'self' && (
           <View style={styles.section}>
             <View style={styles.formCard}>
-              <ThemedText style={styles.cardTitle}>Transfer to Your Purse</ThemedText>
+              <ThemedText style={styles.cardTitle}>Transfer Between Your Purses</ThemedText>
               
-              {/* Purse Selection */}
-              <View style={styles.inputGroup}>
-                <ThemedText style={styles.inputLabel}>Select Purse</ThemedText>
+              {/* From Purse Selection */}
+              <View style={[styles.inputGroup, { zIndex: 1000 }]}>
+                <ThemedText style={styles.inputLabel}>From Purse</ThemedText>
                 <View style={styles.dropdownContainer}>
                   <TouchableOpacity 
                     style={styles.dropdownButton}
-                    onPress={() => setShowPurseDropdown(!showPurseDropdown)}
+                    onPress={() => {
+                      setShowFromPurseDropdown(!showFromPurseDropdown);
+                      setShowPurseDropdown(false); // Close other dropdown
+                    }}
                   >
                     <ThemedText style={styles.dropdownButtonText}>
-                      {selectedPurse || 'Choose your purse'}
+                      {fromPurse ? getFromPurses().find(p => p.key === fromPurse)?.name || 'Choose source purse' : 'Choose source purse'}
+                    </ThemedText>
+                    <ThemedText style={styles.dropdownArrow}>
+                      {showFromPurseDropdown ? '▲' : '▼'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                  
+                  {showFromPurseDropdown && (
+                    <View style={styles.dropdownList}>
+                      {getFromPurses().map((purse, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setFromPurse(purse.key);
+                            setShowFromPurseDropdown(false);
+                          }}
+                        >
+                          <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
+                          <View style={styles.purseInfo}>
+                            <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* To Purse Selection */}
+              <View style={[styles.inputGroup, { zIndex: 999 }]}>
+                <ThemedText style={styles.inputLabel}>To Purse</ThemedText>
+                <View style={styles.dropdownContainer}>
+                  <TouchableOpacity 
+                    style={styles.dropdownButton}
+                    onPress={() => {
+                      setShowPurseDropdown(!showPurseDropdown);
+                      setShowFromPurseDropdown(false); // Close other dropdown
+                    }}
+                  >
+                    <ThemedText style={styles.dropdownButtonText}>
+                      {selectedPurse ? getSelfTransferPurses().find(p => p.key === selectedPurse)?.name || 'Choose destination purse' : 'Choose destination purse'}
                     </ThemedText>
                     <ThemedText style={styles.dropdownArrow}>
                       {showPurseDropdown ? '▲' : '▼'}
@@ -131,19 +292,19 @@ export default function SendTokensScreen() {
                   
                   {showPurseDropdown && (
                     <View style={styles.dropdownList}>
-                      {wallets.map((wallet, index) => (
+                      {getSelfTransferPurses().filter(purse => purse.key !== fromPurse).map((purse, index) => (
                         <TouchableOpacity
                           key={index}
                           style={styles.dropdownItem}
                           onPress={() => {
-                            setSelectedPurse(wallet.name);
+                            setSelectedPurse(purse.key);
                             setShowPurseDropdown(false);
                           }}
                         >
-                          <View style={[styles.purseIndicator, { backgroundColor: wallet.color }]} />
+                          <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
-                            <ThemedText style={styles.purseName}>{wallet.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{wallet.balance} tokens</ThemedText>
+                            <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -163,6 +324,11 @@ export default function SendTokensScreen() {
                   onChangeText={setAmount}
                   keyboardType="numeric"
                 />
+                {fromPurse && (
+                  <ThemedText style={styles.balanceHint}>
+                    Available: {getFromPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
+                  </ThemedText>
+                )}
               </View>
             </View>
           </View>
@@ -174,6 +340,45 @@ export default function SendTokensScreen() {
             <View style={styles.formCard}>
               <ThemedText style={styles.cardTitle}>Send to Someone Else</ThemedText>
               
+              {/* From Purse Selection */}
+              <View style={[styles.inputGroup, { zIndex: 1000 }]}>
+                <ThemedText style={styles.inputLabel}>From Purse</ThemedText>
+                <View style={styles.dropdownContainer}>
+                  <TouchableOpacity 
+                    style={styles.dropdownButton}
+                    onPress={() => setShowFromPurseDropdown(!showFromPurseDropdown)}
+                  >
+                    <ThemedText style={styles.dropdownButtonText}>
+                      {fromPurse ? getFromPurses().find(p => p.key === fromPurse)?.name || 'Choose source purse' : 'Choose source purse'}
+                    </ThemedText>
+                    <ThemedText style={styles.dropdownArrow}>
+                      {showFromPurseDropdown ? '▲' : '▼'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                  
+                  {showFromPurseDropdown && (
+                    <View style={styles.dropdownList}>
+                      {getFromPurses().map((purse, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setFromPurse(purse.key);
+                            setShowFromPurseDropdown(false);
+                          }}
+                        >
+                          <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
+                          <View style={styles.purseInfo}>
+                            <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+
               {/* Recipient Name */}
               <View style={styles.inputGroup}>
                 <ThemedText style={styles.inputLabel}>Recipient Name</ThemedText>
@@ -188,10 +393,10 @@ export default function SendTokensScreen() {
 
               {/* Wallet Address */}
               <View style={styles.inputGroup}>
-                <ThemedText style={styles.inputLabel}>Wallet Address</ThemedText>
+                <ThemedText style={styles.inputLabel}>Wallet Address (User ID)</ThemedText>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter wallet address"
+                  placeholder="Enter recipient's user ID"
                   placeholderTextColor="#999"
                   value={recipientAddress}
                   onChangeText={setRecipientAddress}
@@ -210,6 +415,11 @@ export default function SendTokensScreen() {
                   onChangeText={setAmount}
                   keyboardType="numeric"
                 />
+                {fromPurse && (
+                  <ThemedText style={styles.balanceHint}>
+                    Available: {getFromPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
+                  </ThemedText>
+                )}
               </View>
             </View>
           </View>
@@ -218,10 +428,15 @@ export default function SendTokensScreen() {
         {/* Send Button */}
         <View style={styles.section}>
           <TouchableOpacity 
-            style={styles.sendButton}
+            style={[styles.sendButton, transferLoading && styles.sendButtonDisabled]}
             onPress={handleSendTokens}
+            disabled={transferLoading}
           >
-            <ThemedText style={styles.sendButtonText}>💸 Send Tokens</ThemedText>
+            {transferLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <ThemedText style={styles.sendButtonText}>💸 Send Tokens</ThemedText>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -349,6 +564,7 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 20,
+    zIndex: 1,
   },
   inputLabel: {
     fontSize: 16,
@@ -370,7 +586,7 @@ const styles = StyleSheet.create({
   // Dropdown
   dropdownContainer: {
     position: 'relative',
-    zIndex: 1000,
+    zIndex: 9999,
   },
   dropdownButton: {
     height: 56,
@@ -409,8 +625,9 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
-    zIndex: 1001,
+    elevation: 10,
+    zIndex: 99999,
+    maxHeight: 200,
   },
   dropdownItem: {
     flexDirection: 'row',
@@ -465,5 +682,47 @@ const styles = StyleSheet.create({
   // Bottom padding
   bottomPadding: {
     height: 40,
+  },
+
+  // Loading styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.light.background,
+  },
+  loadingText: {
+    marginTop: 16,
+    color: Colors.light.text,
+    fontSize: 16,
+  },
+
+  // Balance hint
+  balanceHint: {
+    fontSize: 12,
+    color: Colors.light.icon,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+
+  // Send button disabled state
+  sendButtonDisabled: {
+    backgroundColor: '#ccc',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+
+  // Balance info styles
+  balanceInfo: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  balanceText: {
+    fontSize: 14,
+    color: Colors.light.primary,
+    fontWeight: '600',
   },
 });

@@ -10,6 +10,7 @@ export interface Goal {
   target_time: string;
   is_default: boolean;
   user_id?: string;
+  is_claimed?: boolean;
 }
 
 export interface Wallet {

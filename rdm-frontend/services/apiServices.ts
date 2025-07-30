@@ -81,7 +81,7 @@ export const walletAPI = {
   transferTokens: async (transferData: {
     to_user_id?: string;
     to_purse: string;
-    from_purse: string;
+    from_purse: string; // Required for all transfers
     amount: number;
     type: 'peer' | 'self-transfer' | 'charity';
     charity_info?: any;

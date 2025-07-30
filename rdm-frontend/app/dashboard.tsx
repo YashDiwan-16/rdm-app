@@ -118,32 +118,56 @@ export default function DashboardScreen() {
 
   const handleCompleteGoal = async (goalId: string) => {
     try {
-      await goalsAPI.completeGoal({ goal_id: goalId, completed: true });
-      Alert.alert('Success', 'Goal completed! Tokens have been awarded.');
-      fetchWallet(); // Refresh wallet to show updated tokens
-      fetchGoals(); // Refresh goals
-    } catch (error) {
+      const response = await goalsAPI.completeGoal({ goal_id: goalId, completed: true });
+      console.log('Goal completion response:', response);
+      
+      Alert.alert(
+        'Goal Completed! 🎉', 
+        `Congratulations! You have earned ${response.tokens_awarded || 0} tokens. Would you like to manage your tokens now?`,
+        [
+          { text: 'Later', style: 'cancel' },
+          { 
+            text: 'Send Tokens', 
+            style: 'default',
+            onPress: () => {
+              fetchWallet(); // Refresh wallet to show updated tokens
+              fetchGoals(); // Refresh goals
+              router.push('/send-tokens');
+            }
+          },
+        ]
+      );
+    } catch (error: any) {
       console.error('Error completing goal:', error);
-      Alert.alert('Error', 'Failed to complete goal');
+      
+      let errorMessage = 'Failed to complete goal';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error', errorMessage);
     }
   };
 
-  const testNetworkConnection = async () => {
-    try {
-      Alert.alert('Testing Connection', 'Testing network connection to backend...');
-      const response = await api.get('/goals/default');
-      Alert.alert(
-        'Connection Success! ✅', 
-        `Successfully connected to backend!\nFound ${response.data.length} default goals.`
-      );
-    } catch (error: any) {
-      console.error('Network test failed:', error);
-      Alert.alert(
-        'Connection Failed ❌', 
-        `Could not connect to backend:\n${error.message}\n\nCheck if backend is running and network is accessible.`
-      );
-    }
-  };
+  // const testNetworkConnection = async () => {
+  //   try {
+  //     Alert.alert('Testing Connection', 'Testing network connection to backend...');
+  //     const response = await api.get('/goals');
+  //     const customGoals = response.data.filter((goal: any) => !goal.is_default);
+  //     Alert.alert(
+  //       'Connection Success! ✅', 
+  //       `Successfully connected to backend!\nFound ${customGoals.length} custom goals.`
+  //     );
+  //   } catch (error: any) {
+  //     console.error('Network test failed:', error);
+  //     Alert.alert(
+  //       'Connection Failed ❌', 
+  //       `Could not connect to backend:\n${error.message}\n\nCheck if backend is running and network is accessible.`
+  //     );
+  //   }
+  // };
 
   const handleLogout = async () => {
     Alert.alert(
@@ -272,13 +296,16 @@ export default function DashboardScreen() {
 
       {/* Goals */}
       <View style={styles.section}>
-        <ThemedText style={styles.sectionTitle}>Available Goals</ThemedText>
-        {goals.length === 0 ? (
+        <ThemedText style={styles.sectionTitle}>My Custom Goals</ThemedText>
+        {goals.filter(goal => !goal.is_default).length === 0 ? (
           <View style={styles.emptyState}>
-            <ThemedText style={styles.emptyText}>No goals available</ThemedText>
+            <ThemedText style={styles.emptyText}>No custom goals created yet</ThemedText>
+            <ThemedText style={styles.emptySubText}>Tap &quot;Create Task&quot; to add your first goal!</ThemedText>
           </View>
         ) : (
-          goals.map((goal) => (
+          goals
+            .filter(goal => !goal.is_default)
+            .map((goal) => (
             <View key={goal.id} style={styles.goalCard}>
               <View style={styles.goalHeader}>
                 <ThemedText style={styles.goalName}>{goal.name}</ThemedText>
@@ -290,16 +317,20 @@ export default function DashboardScreen() {
               <View style={styles.goalFooter}>
                 <View>
                   <ThemedText style={styles.goalTime}>Target: {formatTargetTime(goal.target_time)}</ThemedText>
-                  <ThemedText style={styles.goalType}>
-                    {goal.is_default ? 'Default' : 'Custom'}
-                  </ThemedText>
+                  <ThemedText style={styles.goalType}>Custom</ThemedText>
                 </View>
-                <TouchableOpacity 
-                  style={styles.completeButton}
-                  onPress={() => handleCompleteGoal(goal.id)}
-                >
-                  <ThemedText style={styles.completeButtonText}>Complete</ThemedText>
-                </TouchableOpacity>
+                {goal.is_claimed ? (
+                  <View style={styles.claimedButton}>
+                    <ThemedText style={styles.claimedButtonText}>✓ Claimed</ThemedText>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={styles.completeButton}
+                    onPress={() => handleCompleteGoal(goal.id)}
+                  >
+                    <ThemedText style={styles.completeButtonText}>Claim</ThemedText>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           ))
@@ -602,6 +633,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.icon,
   },
+  emptySubText: {
+    fontSize: 14,
+    color: Colors.light.icon,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   headerButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -649,6 +686,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   completeButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Claimed button styles
+  claimedButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  claimedButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
