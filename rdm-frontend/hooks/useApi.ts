@@ -16,11 +16,11 @@ export interface Goal {
 export interface Wallet {
   id: string;
   user_id: string;
-  discipline_purse: number;
-  focus_purse: number;
-  mindfulness_purse: number;
+  base_purse: number;
+  reward_purse: number;
+  remorse_purse: number;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export const useGoals = () => {

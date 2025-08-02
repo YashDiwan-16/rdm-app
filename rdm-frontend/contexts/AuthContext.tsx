@@ -72,7 +72,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       router.replace('/dashboard');
     } catch (error: any) {
       console.error('Login error:', error);
-      throw new Error(error.response?.data?.error || 'Login failed');
+      
+      // Handle specific error cases
+      let errorMessage = 'Login failed';
+      if (error.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (typeof backendError === 'string') {
+          errorMessage = backendError;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -102,7 +114,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       router.replace('/dashboard');
     } catch (error: any) {
       console.error('Signup error:', error);
-      throw new Error(error.response?.data?.error || 'Signup failed');
+      
+      // Handle specific error cases
+      let errorMessage = 'Signup failed';
+      if (error.response?.data?.error) {
+        const backendError = error.response.data.error;
+        if (typeof backendError === 'object' && backendError.message) {
+          // Handle Supabase errors
+          if (backendError.message.includes('duplicate key value violates unique constraint')) {
+            errorMessage = 'An account with this email already exists';
+          } else {
+            errorMessage = backendError.message;
+          }
+        } else if (typeof backendError === 'string') {
+          errorMessage = backendError;
+        }
+      }
+      
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
