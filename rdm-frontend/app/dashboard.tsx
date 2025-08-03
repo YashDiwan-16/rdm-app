@@ -14,6 +14,7 @@ import {
     Alert,
     Modal,
     TextInput,
+    Switch,
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 
@@ -23,6 +24,7 @@ interface Wallet {
   base_purse: number;
   reward_purse: number;
   remorse_purse: number;
+  charity_purse: number;
   created_at: string;
   updated_at: string;
 }
@@ -41,10 +43,26 @@ export default function DashboardScreen() {
   });
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
+  const [showUSDT, setShowUSDT] = useState(false);
 
   useEffect(() => {
     fetchWallet();
   }, []);
+
+  // Currency formatting functions
+  const formatCurrency = (amount: number) => {
+    if (showUSDT) {
+      // Assuming 1 RDM = 0.001 USDT (you can adjust this rate)
+      const usdtAmount = amount * 0.001;
+      return `$${usdtAmount.toFixed(3)} USDT`;
+    }
+    return `${amount.toLocaleString()} RDM`;
+  };
+
+  const calculateTotalPortfolio = () => {
+    if (!wallet) return 0;
+    return (wallet.base_purse || 0) + (wallet.reward_purse || 0) + (wallet.remorse_purse || 0) + (wallet.charity_purse || 0);
+  };
 
   const fetchWallet = async () => {
     try {
@@ -213,15 +231,26 @@ export default function DashboardScreen() {
 
       {/* Wallet Overview */}
       <View style={styles.section}>
-        <ThemedText style={styles.sectionTitle}>Token Wallet</ThemedText>
+        <View style={styles.walletHeader}>
+          <ThemedText style={styles.sectionTitle}>Token Wallet</ThemedText>
+          <View style={styles.currencySwitch}>
+            <ThemedText style={[styles.currencyLabel, !showUSDT && styles.activeCurrencyLabel]}>RDM</ThemedText>
+            <Switch
+              value={showUSDT}
+              onValueChange={setShowUSDT}
+              trackColor={{ false: '#E5E7EB', true: '#10B981' }}
+              thumbColor={showUSDT ? '#fff' : '#6B7280'}
+              style={styles.switch}
+            />
+            <ThemedText style={[styles.currencyLabel, showUSDT && styles.activeCurrencyLabel]}>USDT</ThemedText>
+          </View>
+        </View>
         
         {/* Total Portfolio */}
         <View style={styles.portfolioCard}>
           <ThemedText style={styles.portfolioLabel}>Total Portfolio</ThemedText>
           <ThemedText style={styles.portfolioValue}>
-            {wallet ? 
-              ((wallet.base_purse || 0) + (wallet.reward_purse || 0) + (wallet.remorse_purse || 0)) : 0
-            }
+            {wallet ? formatCurrency(calculateTotalPortfolio()) : formatCurrency(0)}
           </ThemedText>
         </View>
 
@@ -247,24 +276,34 @@ export default function DashboardScreen() {
           </View>
         </View> */}
 
-        {/* Additional Purses */}
+        {/* Purse Grid - First Row */}
         <View style={styles.walletGrid}>
           <View style={[styles.walletCard, { backgroundColor: '#6B7280' }]}>
             <ThemedText style={styles.walletName}>Base Purse</ThemedText>
             <ThemedText style={styles.walletBalance}>
-              {wallet?.base_purse || 0}
+              {formatCurrency(wallet?.base_purse || 0)}
             </ThemedText>
           </View>
           <View style={[styles.walletCard, { backgroundColor: '#10B981' }]}>
             <ThemedText style={styles.walletName}>Reward Purse</ThemedText>
             <ThemedText style={styles.walletBalance}>
-              {wallet?.reward_purse || 0}
+              {formatCurrency(wallet?.reward_purse || 0)}
             </ThemedText>
           </View>
+        </View>
+        
+        {/* Purse Grid - Second Row */}
+        <View style={styles.walletGrid}>
           <View style={[styles.walletCard, { backgroundColor: '#EF4444' }]}>
             <ThemedText style={styles.walletName}>Remorse Purse</ThemedText>
             <ThemedText style={styles.walletBalance}>
-              {wallet?.remorse_purse || 0}
+              {formatCurrency(wallet?.remorse_purse || 0)}
+            </ThemedText>
+          </View>
+          <View style={[styles.walletCard, { backgroundColor: '#8B5CF6' }]}>
+            <ThemedText style={styles.walletName}>Charity Purse</ThemedText>
+            <ThemedText style={styles.walletBalance}>
+              {formatCurrency(wallet?.charity_purse || 0)}
             </ThemedText>
           </View>
         </View>
@@ -276,7 +315,7 @@ export default function DashboardScreen() {
         <View style={styles.actionGrid}>
           <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateTask(true)}>
             <ThemedText style={styles.actionEmoji}>➕</ThemedText>
-            <ThemedText style={styles.actionText}>Create Task</ThemedText>
+            <ThemedText style={styles.actionText}>Create Goal</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionCard} onPress={navigateToSendTokens}>
             <ThemedText style={styles.actionEmoji}>💸</ThemedText>
@@ -340,7 +379,7 @@ export default function DashboardScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <ThemedText style={styles.modalTitle}>Create New Task</ThemedText>
+            <ThemedText style={styles.modalTitle}>Create New Goal</ThemedText>
             <TouchableOpacity 
               style={styles.closeButton}
               onPress={() => {
@@ -355,7 +394,7 @@ export default function DashboardScreen() {
           
           <View style={styles.modalContent}>
             <View style={styles.inputContainer}>
-              <ThemedText style={styles.inputLabel}>Task Name</ThemedText>
+              <ThemedText style={styles.inputLabel}>Goal Name</ThemedText>
               <TextInput
                 style={styles.input}
                 value={newTask.name}
@@ -394,7 +433,7 @@ export default function DashboardScreen() {
               style={styles.createTaskButton}
               onPress={handleCreateTask}
             >
-              <ThemedText style={styles.createTaskButtonText}>Create Task</ThemedText>
+              <ThemedText style={styles.createTaskButtonText}>Create Goal</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -525,6 +564,7 @@ const styles = StyleSheet.create({
   walletGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
   walletCard: {
     flex: 1,
@@ -861,5 +901,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Currency switch styles
+  walletHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  currencySwitch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  currencyLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginHorizontal: 4,
+  },
+  activeCurrencyLabel: {
+    color: Colors.light.primary,
+  },
+  switch: {
+    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
+    marginHorizontal: 2,
   },
 });

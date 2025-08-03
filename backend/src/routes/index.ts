@@ -24,7 +24,8 @@ router.post('/signup', async (req: Request, res: Response) => {
     user_id: user.id,
     base_purse: 0,
     reward_purse: 0,
-    remorse_purse: 0
+    remorse_purse: 0,
+    charity_purse: 0
   }]);
 
   if (walletError) {
@@ -223,7 +224,7 @@ router.get('/wallet/balance', authMiddleware, async (req: AuthRequest, res: Resp
 
   const { data, error } = await supabase
     .from('wallets')
-    .select('base_purse, reward_purse, remorse_purse')
+    .select('base_purse, reward_purse, remorse_purse, charity_purse')
     .eq('user_id', user_id)
     .single();
 
