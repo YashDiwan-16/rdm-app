@@ -399,7 +399,7 @@ export default function DashboardScreen() {
                 style={styles.input}
                 value={newTask.name}
                 onChangeText={(text) => setNewTask({...newTask, name: text})}
-                placeholder="Enter task name"
+                placeholder="Enter goal name"
                 placeholderTextColor={Colors.light.icon}
               />
             </View>
@@ -410,7 +410,7 @@ export default function DashboardScreen() {
                 style={[styles.input, styles.textArea]}
                 value={newTask.description}
                 onChangeText={(text) => setNewTask({...newTask, description: text})}
-                placeholder="Enter task description"
+                placeholder="Enter goal description"
                 placeholderTextColor={Colors.light.icon}
                 multiline
                 numberOfLines={3}

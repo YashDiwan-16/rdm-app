@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 const getBaseURL = () => {
   if (__DEV__) {
     // Development environment
-    const DEV_SERVER_IP = '192.168.0.3'; // Updated to your current IP address
+    const DEV_SERVER_IP = '192.168.0.2'; // Updated to your current IP address
     
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
       // For Expo Go on physical device, use your computer's IP address

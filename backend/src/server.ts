@@ -12,12 +12,12 @@ app.use(cors({
   origin: [
     'http://localhost:8081', 
     'http://localhost:19006',
-    'http://192.168.0.5:8081',
-    'http://192.168.0.5:19006',
+    'http://192.168.0.2:8081',
+    'http://192.168.0.2:19006',
     'exp://localhost:8081', 
     'exp://localhost:19006',
-    'exp://192.168.0.5:8081',
-    'exp://192.168.0.5:19006'
+    'exp://192.168.0.2:8081',
+    'exp://192.168.0.2:19006'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
