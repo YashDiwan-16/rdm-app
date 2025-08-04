@@ -1,10 +1,11 @@
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWallet } from '@/contexts/WalletContext';
 import { useGoals } from '@/hooks/useApi';
-import { walletAPI, goalsAPI } from '@/services/apiServices';
+import { goalsAPI } from '@/services/apiServices';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -18,23 +19,11 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 
-interface Wallet {
-  id: string;
-  user_id: string;
-  base_purse: number;
-  reward_purse: number;
-  remorse_purse: number;
-  charity_purse: number;
-  created_at: string;
-  updated_at: string;
-}
-
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
+  const { wallet, isLoading: walletLoading, refreshWallet } = useWallet();
   const { goals, loading, fetchGoals } = useGoals();
   const router = useRouter();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [walletLoading, setWalletLoading] = useState(true);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [newTask, setNewTask] = useState({
     name: '',
@@ -46,9 +35,6 @@ export default function DashboardScreen() {
   const [selectedDate, setSelectedDate] = useState('');
   const [showUSDT, setShowUSDT] = useState(false);
 
-  useEffect(() => {
-    fetchWallet();
-  }, []);
 
   // Currency formatting functions
   const formatCurrency = (amount: number) => {
@@ -65,17 +51,6 @@ export default function DashboardScreen() {
     return (wallet.base_purse || 0) + (wallet.reward_purse || 0) + (wallet.remorse_purse || 0) + (wallet.charity_purse || 0);
   };
 
-  const fetchWallet = async () => {
-    try {
-      setWalletLoading(true);
-      const walletData = await walletAPI.getWallet();
-      setWallet(walletData);
-    } catch (error) {
-      console.error('Error fetching wallet:', error);
-    } finally {
-      setWalletLoading(false);
-    }
-  };
 
   const handleCreateTask = async () => {
     if (!newTask.name || !newTask.description || !newTask.target_time || !newTask.pledge_amount || newTask.pledge_amount < 1) {
@@ -102,7 +77,7 @@ export default function DashboardScreen() {
       setSelectedDate('');
       setShowCreateTask(false);
       fetchGoals(); // Refresh goals list
-      fetchWallet(); // Refresh wallet to show locked tokens
+      await refreshWallet(); // Refresh wallet to show locked tokens
       Alert.alert('Success', response.message || 'Goal created successfully!');
     } catch (error: any) {
       console.error('Error creating task:', error);
@@ -171,7 +146,7 @@ export default function DashboardScreen() {
       });
       
       Alert.alert('Reflection Saved! ✨', response.message);
-      fetchWallet(); // Refresh wallet to show updated tokens
+      await refreshWallet(); // Refresh wallet to show updated tokens
       fetchGoals(); // Refresh goals
     } catch (error: any) {
       console.error('Error reflecting on goal:', error);

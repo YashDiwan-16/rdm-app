@@ -1,7 +1,7 @@
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     Alert,
     ScrollView,
@@ -12,19 +12,11 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { walletAPI } from '@/services/apiServices';
-
-interface Wallet {
-  id: string;
-  user_id: string;
-  base_purse: number;
-  reward_purse: number;
-  remorse_purse: number;
-  created_at: string;
-  updated_at?: string;
-}
+import { useWallet } from '@/contexts/WalletContext';
 
 export default function SendTokensScreen() {
-  const [sendMode, setSendMode] = useState<'self' | 'others'>('self');
+  const { wallet, isLoading, refreshWallet } = useWallet();
+  const [sendMode, setSendMode] = useState<'self' | 'charity'>('self');
   const [selectedPurse, setSelectedPurse] = useState('');
   const [fromPurse, setFromPurse] = useState('');
   const [amount, setAmount] = useState('');
@@ -32,49 +24,55 @@ export default function SendTokensScreen() {
   const [recipientAddress, setRecipientAddress] = useState('');
   const [showPurseDropdown, setShowPurseDropdown] = useState(false);
   const [showFromPurseDropdown, setShowFromPurseDropdown] = useState(false);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [loading, setLoading] = useState(true);
   const [transferLoading, setTransferLoading] = useState(false);
+  const [selectedPercentage, setSelectedPercentage] = useState<string>('');
 
-  useEffect(() => {
-    fetchWallet();
-  }, []);
-
-  const fetchWallet = async () => {
-    try {
-      setLoading(true);
-      const walletData = await walletAPI.getWallet();
-      setWallet(walletData);
-    } catch (error) {
-      console.error('Error fetching wallet:', error);
-      Alert.alert('Error', 'Failed to load wallet data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getAvailablePurses = () => {
-    if (!wallet) return [];
-    
-    return [
-      { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
-      { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
-    ];
-  };
 
   const getSelfTransferPurses = () => {
-    // For self-transfer, show only base and reward purses
+    // For self-transfer, show all purses except charity (charity is destination only)
     if (!wallet) return [];
     
     return [
       { name: 'Base Purse', balance: wallet.base_purse, color: '#6B7280', key: 'base' },
       { name: 'Reward Purse', balance: wallet.reward_purse, color: '#10B981', key: 'reward' },
+      { name: 'Remorse Purse', balance: wallet.remorse_purse, color: '#EF4444', key: 'remorse' },
     ];
   };
 
   const getFromPurses = () => {
-    // For any transfer, show all purses with balance > 0
-    return getAvailablePurses().filter(purse => purse.balance > 0);
+    // For transfers TO charity, show base, reward, and remorse purses with balance > 0
+    return [
+      { name: 'Base Purse', balance: wallet?.base_purse || 0, color: '#6B7280', key: 'base' },
+      { name: 'Reward Purse', balance: wallet?.reward_purse || 0, color: '#10B981', key: 'reward' },
+      { name: 'Remorse Purse', balance: wallet?.remorse_purse || 0, color: '#EF4444', key: 'remorse' },
+    ].filter(purse => purse.balance > 0);
+  };
+
+
+  const calculatePercentageAmount = (percentage: string) => {
+    if (!fromPurse || !wallet) return 0;
+    
+    const sourcePurse = getFromPurses().find(p => p.key === fromPurse);
+    if (!sourcePurse) return 0;
+    
+    const balance = sourcePurse.balance;
+    
+    switch (percentage) {
+      case 'max':
+        return balance;
+      case '50':
+        return Math.floor(balance * 0.5);
+      case '25':
+        return Math.floor(balance * 0.25);
+      default:
+        return 0;
+    }
+  };
+
+  const handlePercentageSelect = (percentage: string) => {
+    setSelectedPercentage(percentage);
+    const calculatedAmount = calculatePercentageAmount(percentage);
+    setAmount(calculatedAmount.toString());
   };
 
   const handleSendTokens = async () => {
@@ -95,7 +93,7 @@ export default function SendTokensScreen() {
         return;
       }
 
-      const sourcePurse = getFromPurses().find(p => p.key === fromPurse);
+      const sourcePurse = getFromPurses().find(p => p.key === fromPurse) || getSelfTransferPurses().find(p => p.key === fromPurse);
       if (!sourcePurse || sourcePurse.balance < numAmount) {
         Alert.alert('Error', 'Insufficient balance in source purse');
         return;
@@ -110,13 +108,55 @@ export default function SendTokensScreen() {
           type: 'self-transfer'
         });
         
-        Alert.alert('Success!', `${amount} tokens transferred from ${sourcePurse.name} to ${getSelfTransferPurses().find(p => p.key === selectedPurse)?.name}!`);
-        await fetchWallet(); // Refresh wallet data
+        const destPurse = getSelfTransferPurses().find(p => p.key === selectedPurse);
+        Alert.alert('Success!', `${amount} tokens transferred from ${sourcePurse.name} to ${destPurse?.name}!`);
+        await refreshWallet(); // Refresh wallet data
         
         // Reset form
         setAmount('');
         setSelectedPurse('');
         setFromPurse('');
+        setSelectedPercentage('');
+      } catch (error) {
+        console.error('Transfer error:', error);
+        Alert.alert('Error', 'Failed to transfer tokens');
+      } finally {
+        setTransferLoading(false);
+      }
+    } else if (sendMode === 'charity') {
+      if (!fromPurse || !amount) {
+        Alert.alert('Error', 'Please select source purse and enter an amount');
+        return;
+      }
+      
+      const numAmount = parseFloat(amount);
+      if (isNaN(numAmount) || numAmount <= 0) {
+        Alert.alert('Error', 'Please enter a valid amount');
+        return;
+      }
+
+      const sourcePurse = getFromPurses().find(p => p.key === fromPurse);
+      if (!sourcePurse || sourcePurse.balance < numAmount) {
+        Alert.alert('Error', 'Insufficient balance in source purse');
+        return;
+      }
+
+      try {
+        setTransferLoading(true);
+        await walletAPI.transferTokens({
+          to_purse: 'charity',
+          from_purse: fromPurse,
+          amount: numAmount,
+          type: 'self-transfer' // Charity is treated as self-transfer to charity purse
+        });
+        
+        Alert.alert('Success!', `${amount} tokens moved from ${sourcePurse.name} to Charity Purse for future donations!`);
+        await refreshWallet(); // Refresh wallet data
+        
+        // Reset form
+        setAmount('');
+        setFromPurse('');
+        setSelectedPercentage('');
       } catch (error) {
         console.error('Transfer error:', error);
         Alert.alert('Error', 'Failed to transfer tokens');
@@ -152,7 +192,7 @@ export default function SendTokensScreen() {
         });
         
         Alert.alert('Success!', `${amount} tokens sent to ${recipientName}!`);
-        await fetchWallet(); // Refresh wallet data
+        await refreshWallet(); // Refresh wallet data
         
         // Reset form
         setAmount('');
@@ -168,7 +208,7 @@ export default function SendTokensScreen() {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
@@ -197,22 +237,34 @@ export default function SendTokensScreen() {
 
         {/* Send Mode Toggle */}
         <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Send To</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Transfer Mode</ThemedText>
           <View style={styles.toggleContainer}>
             <TouchableOpacity
               style={[styles.toggleButton, sendMode === 'self' && styles.toggleButtonActive]}
-              onPress={() => setSendMode('self')}
+              onPress={() => {
+                setSendMode('self');
+                setAmount('');
+                setSelectedPercentage('');
+                setFromPurse('');
+                setSelectedPurse('');
+              }}
             >
               <ThemedText style={[styles.toggleText, sendMode === 'self' && styles.toggleTextActive]}>
-                💼 To Self
+                💼 Between Purses
               </ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.toggleButton, sendMode === 'others' && styles.toggleButtonActive]}
-              onPress={() => setSendMode('others')}
+              style={[styles.toggleButton, sendMode === 'charity' && styles.toggleButtonActive]}
+              onPress={() => {
+                setSendMode('charity');
+                setAmount('');
+                setSelectedPercentage('');
+                setFromPurse('');
+                setSelectedPurse('');
+              }}
             >
-              <ThemedText style={[styles.toggleText, sendMode === 'others' && styles.toggleTextActive]}>
-                👥 To Others
+              <ThemedText style={[styles.toggleText, sendMode === 'charity' && styles.toggleTextActive]}>
+                ❤️ To Charity
               </ThemedText>
             </TouchableOpacity>
           </View>
@@ -311,17 +363,45 @@ export default function SendTokensScreen() {
               {/* Amount Input */}
               <View style={styles.inputGroup}>
                 <ThemedText style={styles.inputLabel}>Amount</ThemedText>
+                
+                {/* Percentage Buttons for Self Transfer */}
+                {fromPurse && (
+                  <View style={styles.percentageContainer}>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === '25' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('25')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === '25' && styles.percentageTextActive]}>25%</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === '50' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('50')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === '50' && styles.percentageTextActive]}>50%</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === 'max' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('max')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === 'max' && styles.percentageTextActive]}>MAX</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <TextInput
                   style={styles.textInput}
                   placeholder="Enter token amount"
                   placeholderTextColor="#999"
                   value={amount}
-                  onChangeText={setAmount}
+                  onChangeText={(text) => {
+                    setAmount(text);
+                    setSelectedPercentage(''); // Clear percentage selection when typing manually
+                  }}
                   keyboardType="numeric"
                 />
                 {fromPurse && (
                   <ThemedText style={styles.balanceHint}>
-                    Available: {getFromPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
+                    Available: {getSelfTransferPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
                   </ThemedText>
                 )}
               </View>
@@ -329,11 +409,11 @@ export default function SendTokensScreen() {
           </View>
         )}
 
-        {/* Send to Others Form */}
-        {sendMode === 'others' && (
+        {/* Send to Charity Form */}
+        {sendMode === 'charity' && (
           <View style={styles.section}>
             <View style={styles.formCard}>
-              <ThemedText style={styles.cardTitle}>Send to Someone Else</ThemedText>
+              <ThemedText style={styles.cardTitle}>Move Tokens to Charity</ThemedText>
               
               {/* From Purse Selection */}
               <View style={[styles.inputGroup, { zIndex: 1000 }]}>
@@ -360,6 +440,8 @@ export default function SendTokensScreen() {
                           onPress={() => {
                             setFromPurse(purse.key);
                             setShowFromPurseDropdown(false);
+                            setAmount(''); // Reset amount when changing source purse
+                            setSelectedPercentage(''); // Reset percentage
                           }}
                         >
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
@@ -374,40 +456,43 @@ export default function SendTokensScreen() {
                 </View>
               </View>
 
-              {/* Recipient Name */}
-              <View style={styles.inputGroup}>
-                <ThemedText style={styles.inputLabel}>Recipient Name</ThemedText>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter recipient's name"
-                  placeholderTextColor="#999"
-                  value={recipientName}
-                  onChangeText={setRecipientName}
-                />
-              </View>
-
-              {/* Wallet Address */}
-              <View style={styles.inputGroup}>
-                <ThemedText style={styles.inputLabel}>Wallet Address (User ID)</ThemedText>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter recipient's user ID"
-                  placeholderTextColor="#999"
-                  value={recipientAddress}
-                  onChangeText={setRecipientAddress}
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* Amount Input */}
+              {/* Amount Input with Percentage Options */}
               <View style={styles.inputGroup}>
                 <ThemedText style={styles.inputLabel}>Amount</ThemedText>
+                
+                {/* Percentage Buttons */}
+                {fromPurse && (
+                  <View style={styles.percentageContainer}>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === '25' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('25')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === '25' && styles.percentageTextActive]}>25%</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === '50' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('50')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === '50' && styles.percentageTextActive]}>50%</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.percentageButton, selectedPercentage === 'max' && styles.percentageButtonActive]}
+                      onPress={() => handlePercentageSelect('max')}
+                    >
+                      <ThemedText style={[styles.percentageText, selectedPercentage === 'max' && styles.percentageTextActive]}>MAX</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <TextInput
                   style={styles.textInput}
                   placeholder="Enter token amount"
                   placeholderTextColor="#999"
                   value={amount}
-                  onChangeText={setAmount}
+                  onChangeText={(text) => {
+                    setAmount(text);
+                    setSelectedPercentage(''); // Clear percentage selection when typing manually
+                  }}
                   keyboardType="numeric"
                 />
                 {fromPurse && (
@@ -415,6 +500,14 @@ export default function SendTokensScreen() {
                     Available: {getFromPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
                   </ThemedText>
                 )}
+              </View>
+
+              {/* Destination Info */}
+              <View style={styles.charityInfoContainer}>
+                <ThemedText style={styles.charityInfoTitle}>🎁 Destination: Charity Purse</ThemedText>
+                <ThemedText style={styles.charityInfoText}>
+                  Tokens will be moved to your Charity Purse, ready for future donations to worthy causes.
+                </ThemedText>
               </View>
             </View>
           </View>
@@ -430,7 +523,9 @@ export default function SendTokensScreen() {
             {transferLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <ThemedText style={styles.sendButtonText}>💸 Send Tokens</ThemedText>
+              <ThemedText style={styles.sendButtonText}>
+                {sendMode === 'charity' ? '❤️ Move to Charity' : '💸 Transfer Tokens'}
+              </ThemedText>
             )}
           </TouchableOpacity>
         </View>
@@ -719,5 +814,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.primary,
     fontWeight: '600',
+  },
+
+  // Percentage button styles
+  percentageContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
+  },
+  percentageButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.light.lightBlue,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  percentageButtonActive: {
+    backgroundColor: Colors.light.accent,
+    borderColor: Colors.light.accent,
+  },
+  percentageText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.primary,
+  },
+  percentageTextActive: {
+    color: '#fff',
+  },
+
+  // Charity info styles
+  charityInfoContainer: {
+    backgroundColor: '#f0f9ff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0f2fe',
+    marginTop: 8,
+  },
+  charityInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.primary,
+    marginBottom: 8,
+  },
+  charityInfoText: {
+    fontSize: 14,
+    color: Colors.light.icon,
+    lineHeight: 20,
   },
 });
