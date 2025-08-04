@@ -53,18 +53,19 @@ export const goalsAPI = {
     name: string;
     description: string;
     associated_tokens: number;
+    pledge_amount: number;
     target_time: string;
   }) => {
     const response = await api.post('/goals/custom', goalData);
     return response.data;
   },
 
-  // Complete a goal
-  completeGoal: async (goalData: {
+  // Reflect on a goal (done/partly done/not done)
+  reflectOnGoal: async (reflectionData: {
     goal_id: string;
-    completed: boolean;
+    reflection_status: 'done' | 'partly done' | 'not done';
   }) => {
-    const response = await api.post('/goals/complete', goalData);
+    const response = await api.post('/goals/reflect', reflectionData);
     return response.data;
   },
 };

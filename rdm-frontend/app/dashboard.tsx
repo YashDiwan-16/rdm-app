@@ -40,6 +40,7 @@ export default function DashboardScreen() {
     name: '',
     description: '',
     target_time: '',
+    pledge_amount: 1,
   });
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
@@ -77,27 +78,36 @@ export default function DashboardScreen() {
   };
 
   const handleCreateTask = async () => {
-    if (!newTask.name || !newTask.description || !newTask.target_time) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!newTask.name || !newTask.description || !newTask.target_time || !newTask.pledge_amount || newTask.pledge_amount < 1) {
+      Alert.alert('Error', 'Please fill in all fields and ensure pledge amount is at least 1 RDM');
+      return;
+    }
+
+    // Check if user has enough tokens for pledge
+    if (!wallet || wallet.base_purse < newTask.pledge_amount) {
+      Alert.alert('Error', 'Insufficient tokens in base purse for pledge amount');
       return;
     }
 
     try {
-      await goalsAPI.createCustomGoal({
+      const response = await goalsAPI.createCustomGoal({
         name: newTask.name,
         description: newTask.description,
-        associated_tokens: 10, // Default token value
+        associated_tokens: 10, // Default bonus token value
+        pledge_amount: newTask.pledge_amount,
         target_time: newTask.target_time,
       });
       
-      setNewTask({ name: '', description: '', target_time: '' });
+      setNewTask({ name: '', description: '', target_time: '', pledge_amount: 1 });
       setSelectedDate('');
       setShowCreateTask(false);
       fetchGoals(); // Refresh goals list
-      Alert.alert('Success', 'Task created successfully!');
-    } catch (error) {
+      fetchWallet(); // Refresh wallet to show locked tokens
+      Alert.alert('Success', response.message || 'Goal created successfully!');
+    } catch (error: any) {
       console.error('Error creating task:', error);
-      Alert.alert('Error', 'Failed to create task');
+      const errorMessage = error.response?.data?.error || 'Failed to create goal';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -130,37 +140,42 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleCompleteGoal = async (goalId: string) => {
+  const handleReflectOnGoal = (goalId: string) => {
+    Alert.alert(
+      'Goal Reflection 🤔',
+      'How did you do with this goal?',
+      [
+        {
+          text: 'Not Done',
+          style: 'destructive',
+          onPress: () => submitReflection(goalId, 'not done')
+        },
+        {
+          text: 'Partly Done',
+          onPress: () => submitReflection(goalId, 'partly done')
+        },
+        {
+          text: 'Done!',
+          style: 'default',
+          onPress: () => submitReflection(goalId, 'done')
+        },
+      ]
+    );
+  };
+
+  const submitReflection = async (goalId: string, status: 'done' | 'partly done' | 'not done') => {
     try {
-      const response = await goalsAPI.completeGoal({ goal_id: goalId, completed: true });
-      console.log('Goal completion response:', response);
+      const response = await goalsAPI.reflectOnGoal({ 
+        goal_id: goalId, 
+        reflection_status: status 
+      });
       
-      Alert.alert(
-        'Goal Completed! 🎉', 
-        `Congratulations! You have earned ${response.tokens_awarded || 0} tokens. Would you like to manage your tokens now?`,
-        [
-          { text: 'Later', style: 'cancel' },
-          { 
-            text: 'Send Tokens', 
-            style: 'default',
-            onPress: () => {
-              fetchWallet(); // Refresh wallet to show updated tokens
-              fetchGoals(); // Refresh goals
-              router.push('/send-tokens');
-            }
-          },
-        ]
-      );
+      Alert.alert('Reflection Saved! ✨', response.message);
+      fetchWallet(); // Refresh wallet to show updated tokens
+      fetchGoals(); // Refresh goals
     } catch (error: any) {
-      console.error('Error completing goal:', error);
-      
-      let errorMessage = 'Failed to complete goal';
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
+      console.error('Error reflecting on goal:', error);
+      const errorMessage = error.response?.data?.error || 'Failed to save reflection';
       Alert.alert('Error', errorMessage);
     }
   };
@@ -355,14 +370,14 @@ export default function DashboardScreen() {
                 </View>
                 {goal.is_claimed ? (
                   <View style={styles.claimedButton}>
-                    <ThemedText style={styles.claimedButtonText}>✓ Claimed</ThemedText>
+                    <ThemedText style={styles.claimedButtonText}>✓ Reflected</ThemedText>
                   </View>
                 ) : (
                   <TouchableOpacity 
                     style={styles.completeButton}
-                    onPress={() => handleCompleteGoal(goal.id)}
+                    onPress={() => handleReflectOnGoal(goal.id)}
                   >
-                    <ThemedText style={styles.completeButtonText}>Claim</ThemedText>
+                    <ThemedText style={styles.completeButtonText}>Reflect</ThemedText>
                   </TouchableOpacity>
                 )}
               </View>
@@ -384,7 +399,7 @@ export default function DashboardScreen() {
               style={styles.closeButton}
               onPress={() => {
                 setShowCreateTask(false);
-                setNewTask({ name: '', description: '', target_time: '' });
+                setNewTask({ name: '', description: '', target_time: '', pledge_amount: 1 });
                 setSelectedDate('');
               }}
             >
@@ -415,6 +430,24 @@ export default function DashboardScreen() {
                 multiline
                 numberOfLines={3}
               />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <ThemedText style={styles.inputLabel}>Pledge Amount (minimum 1 RDM)</ThemedText>
+              <TextInput
+                style={styles.input}
+                value={newTask.pledge_amount.toString()}
+                onChangeText={(text) => {
+                  const amount = parseInt(text) || 1;
+                  setNewTask({...newTask, pledge_amount: Math.max(1, amount)});
+                }}
+                placeholder="Enter pledge amount"
+                placeholderTextColor={Colors.light.icon}
+                keyboardType="numeric"
+              />
+              <ThemedText style={styles.inputHint}>
+                Available in Base Purse: {wallet?.base_purse || 0} RDM
+              </ThemedText>
             </View>
 
             <View style={styles.inputContainer}>
@@ -929,5 +962,12 @@ const styles = StyleSheet.create({
   switch: {
     transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
     marginHorizontal: 2,
+  },
+  // Input hint styles
+  inputHint: {
+    fontSize: 12,
+    color: Colors.light.icon,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });

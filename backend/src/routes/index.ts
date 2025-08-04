@@ -22,7 +22,7 @@ router.post('/signup', async (req: Request, res: Response) => {
   const user = data?.[0];
   const { error: walletError } = await supabase.from('wallets').insert([{ 
     user_id: user.id,
-    base_purse: 0,
+    base_purse: 100, // Give new users 100 RDM to start with
     reward_purse: 0,
     remorse_purse: 0,
     charity_purse: 0
@@ -70,19 +70,59 @@ router.post('/goals/default', async (req: Request, res: Response) => {
 
 // Add custom goal
 router.post('/goals/custom', authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { name, description, associated_tokens, target_time } = req.body;
+  const { name, description, associated_tokens, target_time, pledge_amount } = req.body;
+  const user_id = req.user!.id;
 
+  // Validate pledge amount (minimum 1 RDM per day)
+  if (!pledge_amount || pledge_amount < 1) {
+    return res.status(400).json({ error: 'Pledge amount must be at least 1 RDM' });
+  }
+
+  // Check if user has enough tokens in base purse
+  const { data: wallet, error: walletError } = await supabase
+    .from('wallets')
+    .select('base_purse')
+    .eq('user_id', user_id)
+    .single();
+
+  if (walletError || !wallet) {
+    return res.status(400).json({ error: 'Unable to access wallet' });
+  }
+
+  if (wallet.base_purse < pledge_amount) {
+    return res.status(400).json({ error: 'Insufficient tokens in base purse for pledge' });
+  }
+
+  // Create the goal
   const { data, error } = await supabase.from('goals').insert([{
     name,
     description,
     associated_tokens,
+    pledge_amount,
     target_time,
     is_default: false,
-    user_id: req.user!.id
+    user_id
   }]).select();
 
   if (error) return res.status(400).json({ error });
-  res.json(data?.[0]);
+
+  // Lock the pledge amount by deducting from base purse
+  const { error: updateError } = await supabase
+    .from('wallets')
+    .update({
+      base_purse: wallet.base_purse - pledge_amount
+    })
+    .eq('user_id', user_id);
+
+  if (updateError) {
+    console.error('Failed to lock pledge amount:', updateError);
+    return res.status(400).json({ error: 'Failed to lock pledge amount' });
+  }
+
+  res.json({ 
+    ...data?.[0], 
+    message: `Goal created successfully! ${pledge_amount} RDM pledged and locked.` 
+  });
 });
 
 // Get visible goals with claim status
@@ -234,13 +274,19 @@ router.get('/wallet/balance', authMiddleware, async (req: AuthRequest, res: Resp
 });
 
 
-// Complete goal
-router.post('/goals/complete', authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { goal_id, completed } = req.body;
+// Goal reflection - handle done/partly/not done status
+router.post('/goals/reflect', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { goal_id, reflection_status } = req.body;
   const user_id = req.user!.id;
 
+  // Validate reflection status
+  const validStatuses = ['done', 'partly done', 'not done'];
+  if (!validStatuses.includes(reflection_status)) {
+    return res.status(400).json({ error: 'Invalid reflection status. Must be: done, partly done, or not done' });
+  }
+
   try {
-    // First, get the goal details to know how many tokens to award
+    // Get the goal details including pledge amount
     const { data: goal, error: goalError } = await supabase
       .from('goals')
       .select('*')
@@ -252,73 +298,93 @@ router.post('/goals/complete', authMiddleware, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: `Goal not found: ${goalError?.message || 'Unknown error'}` });
     }
 
-    // Check if user has already claimed this goal by creating a user_goals entry
-    const { data: existingClaim } = await supabase
+    // Check if user has already reflected on this goal
+    const { data: existingReflection } = await supabase
       .from('user_goals')
       .select('*')
       .eq('user_id', user_id)
-      .eq('goal_id', goal_id)
-      .eq('completed', true);
+      .eq('goal_id', goal_id);
 
-    if (existingClaim && existingClaim.length > 0) {
-      return res.status(400).json({ error: 'Goal already claimed' });
+    if (existingReflection && existingReflection.length > 0) {
+      return res.status(400).json({ error: 'Goal reflection already completed' });
     }
 
-    // If goal is completed, record the claim and award tokens
-    if (completed) {
-      // Record the goal completion/claim
-      const { error: claimError } = await supabase
-        .from('user_goals')
-        .insert([{
-          user_id,
-          goal_id,
-          completed: true,
-          completed_at: new Date().toISOString()
-        }]);
+    // Record the reflection
+    const { error: reflectionError } = await supabase
+      .from('user_goals')
+      .insert([{
+        user_id,
+        goal_id,
+        completed: reflection_status === 'done',
+        reflection_status,
+        completed_at: new Date().toISOString()
+      }]);
 
-      if (claimError) {
-        console.error('Goal claim error:', claimError);
-        return res.status(400).json({ error: `Failed to claim goal: ${claimError.message}` });
-      }
+    if (reflectionError) {
+      console.error('Goal reflection error:', reflectionError);
+      return res.status(400).json({ error: `Failed to record reflection: ${reflectionError.message}` });
+    }
 
-      const tokensToAward = goal.associated_tokens;
+    // Get user's current wallet
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('user_id', user_id)
+      .single();
+
+    if (walletError || !wallet) {
+      console.error('Wallet fetch error:', walletError);
+      return res.status(400).json({ error: `Wallet not found: ${walletError?.message || 'Unknown error'}` });
+    }
+
+    // Distribute pledged tokens based on reflection status
+    const pledgeAmount = goal.pledge_amount || 0;
+    let walletUpdates: any = {};
+    let message = '';
+
+    switch (reflection_status) {
+      case 'done':
+        // All pledge + associated tokens go to reward purse
+        walletUpdates.reward_purse = wallet.reward_purse + pledgeAmount + goal.associated_tokens;
+        message = `Excellent! ${pledgeAmount + goal.associated_tokens} RDM moved to your Reward Purse.`;
+        break;
       
-      // Get user's current wallet
-      const { data: wallet, error: walletError } = await supabase
-        .from('wallets')
-        .select('*')
-        .eq('user_id', user_id)
-        .single();
-
-      if (walletError || !wallet) {
-        console.error('Wallet fetch error:', walletError);
-        return res.status(400).json({ error: `Wallet not found: ${walletError?.message || 'Unknown error'}` });
-      }
-
-      // Award tokens to base purse (earned tokens go to base purse)
-      const { error: updateError } = await supabase
-        .from('wallets')
-        .update({
-          base_purse: wallet.base_purse + tokensToAward
-        })
-        .eq('user_id', user_id);
-
-      if (updateError) {
-        console.error('Token award error:', updateError);
-        return res.status(400).json({ error: `Failed to award tokens: ${updateError.message}` });
-      }
+      case 'partly done':
+        // Split pledge 50:50 between reward and remorse, associated tokens to reward
+        const halfPledge = Math.floor(pledgeAmount / 2);
+        walletUpdates.reward_purse = wallet.reward_purse + halfPledge + goal.associated_tokens;
+        walletUpdates.remorse_purse = wallet.remorse_purse + (pledgeAmount - halfPledge);
+        message = `${halfPledge} RDM to Reward Purse, ${pledgeAmount - halfPledge} RDM to Remorse Purse, plus ${goal.associated_tokens} bonus RDM to Reward Purse.`;
+        break;
+      
+      case 'not done':
+        // All pledge goes to remorse purse
+        walletUpdates.remorse_purse = wallet.remorse_purse + pledgeAmount;
+        message = `${pledgeAmount} RDM moved to your Remorse Purse. Try again tomorrow!`;
+        break;
     }
 
-    // Return success with goal and awarded tokens info
+    // Update wallet
+    const { error: updateError } = await supabase
+      .from('wallets')
+      .update(walletUpdates)
+      .eq('user_id', user_id);
+
+    if (updateError) {
+      console.error('Wallet update error:', updateError);
+      return res.status(400).json({ error: `Failed to distribute tokens: ${updateError.message}` });
+    }
+
     res.json({ 
       success: true, 
       goal_id, 
-      completed, 
-      tokens_awarded: completed ? goal.associated_tokens : 0,
-      message: completed ? `Goal claimed! Awarded ${goal.associated_tokens} tokens to your Base Purse.` : 'Goal status updated.'
+      reflection_status,
+      pledge_amount: pledgeAmount,
+      associated_tokens: goal.associated_tokens,
+      message
     });
   } catch (error: any) {
-    console.error('Error completing goal:', error);
+    console.error('Error processing reflection:', error);
     res.status(500).json({ error: `Internal server error: ${error.message}` });
   }
 });
