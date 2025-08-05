@@ -7,6 +7,11 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
+// Health check endpoint for network detection
+router.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', message: 'Server is running', timestamp: new Date().toISOString() });
+});
+
 // Signup
 router.post('/signup', async (req: Request, res: Response) => {
   const { email, password } = req.body;

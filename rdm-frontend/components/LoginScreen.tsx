@@ -13,11 +13,14 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
+import { initializeAPI, runDiagnostics, NetworkConfig } from '@/services/api';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false);
   const { login, isLoading } = useAuth();
   const router = useRouter();
 
@@ -42,6 +45,78 @@ export function LoginScreen() {
 
   const navigateToSignup = () => {
     router.push('/signup');
+  };
+
+  const handleNetworkDiagnostic = async () => {
+    setIsCheckingNetwork(true);
+    try {
+      console.log('🔧 Starting comprehensive network diagnostics...');
+      const diagnostics = await runDiagnostics();
+      
+      if (diagnostics.success && diagnostics.workingIP) {
+        // Update API with working server
+        await initializeAPI();
+        
+        Alert.alert(
+          'Connection Fixed! ✅', 
+          `Found working server at ${diagnostics.workingIP}\n\n` +
+          `Response time: ${diagnostics.results.find(r => r.success)?.responseTime}ms\n\n` +
+          `Your app is now connected and ready!`,
+          [{ text: 'Great!', style: 'default' }]
+        );
+      } else {
+        // Show detailed diagnostic results
+        const resultText = diagnostics.results
+          .map(r => `${r.ip}: ${r.success ? '✅ Working' : '❌ ' + (r.error || 'Failed')}`)
+          .join('\n');
+        
+        Alert.alert(
+          'No Server Found ❌', 
+          `Tested ${diagnostics.results.length} IP addresses:\n\n${resultText}\n\n` +
+          `Solutions:\n` +
+          `1. Start backend: npm run dev\n` +
+          `2. Check WiFi connection\n` +
+          `3. Update PRIMARY_IP in api.ts\n` +
+          `4. Disable firewall temporarily`,
+          [
+            { text: 'Help Me', onPress: () => showDetailedHelp() },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+      }
+    } catch (error: any) {
+      Alert.alert(
+        'Diagnostics Failed ❌', 
+        `Could not run network tests.\n\n` +
+        `Error: ${error?.message || 'Unknown error'}\n\n` +
+        `Please check your device's network settings.`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsCheckingNetwork(false);
+    }
+  };
+
+  const showDetailedHelp = () => {
+    Alert.alert(
+      'Detailed Setup Help 🛠️',
+      `Step-by-step troubleshooting:\n\n` +
+      `1. BACKEND SERVER:\n` +
+      `   • Open terminal in backend folder\n` +
+      `   • Run: npm run dev\n` +
+      `   • Look for "Server running on port 3001"\n\n` +
+      `2. NETWORK CHECK:\n` +
+      `   • Both devices on same WiFi\n` +
+      `   • Mac IP: ${NetworkConfig.PRIMARY_IP}\n` +
+      `   • Try browser: http://${NetworkConfig.PRIMARY_IP}:3001/api/health\n\n` +
+      `3. FIREWALL:\n` +
+      `   • Temporarily disable Mac firewall\n` +
+      `   • Or allow port 3001 in settings\n\n` +
+      `4. STILL NOT WORKING?\n` +
+      `   • Find your Mac's new IP address\n` +
+      `   • Update PRIMARY_IP in api.ts`,
+      [{ text: 'Got It', style: 'default' }]
+    );
   };
 
   return (
@@ -96,6 +171,24 @@ export function LoginScreen() {
               <ThemedText style={styles.buttonText}>
                 {isLoading ? 'Signing In...' : 'Sign In'}
               </ThemedText>
+            </TouchableOpacity>
+
+            {/* Network Diagnostic Button */}
+            <TouchableOpacity
+              style={[styles.diagnosticButton, isCheckingNetwork && styles.buttonDisabled]}
+              onPress={handleNetworkDiagnostic}
+              disabled={isCheckingNetwork}
+            >
+              {isCheckingNetwork ? (
+                <View style={styles.diagnosticLoadingContainer}>
+                  <ActivityIndicator size="small" color={Colors.light.accent} />
+                  <ThemedText style={styles.diagnosticLoadingText}>Testing servers...</ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.diagnosticButtonText}>
+                  🔧 Auto-Fix Network Connection
+                </ThemedText>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -205,5 +298,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.accent,
+  },
+  diagnosticButton: {
+    height: 48,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: Colors.light.accent,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  diagnosticButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.accent,
+  },
+  diagnosticLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diagnosticLoadingText: {
+    fontSize: 14,
+    color: Colors.light.accent,
+    marginLeft: 8,
   },
 });

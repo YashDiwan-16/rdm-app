@@ -157,7 +157,7 @@ export default function CharityScreen() {
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <ThemedText style={styles.backButtonText}>← Back</ThemedText>
+            <ThemedText style={styles.backButtonText}>←</ThemedText>
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <ThemedText style={styles.title}>Charity Distribution</ThemedText>

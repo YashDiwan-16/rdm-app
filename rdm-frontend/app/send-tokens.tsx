@@ -227,7 +227,7 @@ export default function SendTokensScreen() {
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <ThemedText style={styles.backButtonText}>← Back</ThemedText>
+            <ThemedText style={styles.backButtonText}>←</ThemedText>
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <ThemedText style={styles.title}>Send Tokens</ThemedText>

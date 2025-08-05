@@ -7,21 +7,12 @@ dotenv.config();
 
 const app = express();
 
-// CORS configuration
+// CORS configuration - allow all origins in development
 app.use(cors({
-  origin: [
-    'http://localhost:8081', 
-    'http://localhost:19006',
-    'http://192.168.0.2:8081',
-    'http://192.168.0.2:19006',
-    'exp://localhost:8081', 
-    'exp://localhost:19006',
-    'exp://192.168.0.2:8081',
-    'exp://192.168.0.2:19006'
-  ],
+  origin: true, // Allow all origins in development
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
 }));
 
 app.use(express.json());
