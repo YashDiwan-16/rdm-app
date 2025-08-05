@@ -116,5 +116,27 @@ export const charityAPI = {
   getDistributionHistory: async () => {
     const response = await api.get('/charity/history');
     return response.data;
+  },
+
+  // Get donation history (alias for getDistributionHistory)
+  getDonationHistory: async () => {
+    const response = await api.get('/charity/history');
+    return response.data;
+  },
+
+  // Distribute selected amounts to specific organizations
+  distributeSelectedTokens: async (selectedOrganizations: {[key: string]: number}) => {
+    const response = await api.post('/charity/distribute-selected', { selections: selectedOrganizations });
+    return response.data;
+  },
+
+  // Direct donation to a specific organization
+  donateToOrganization: async (donationData: {
+    organization_id: string;
+    amount: number;
+    from_purse: string;
+  }) => {
+    const response = await api.post('/charity/donate', donationData);
+    return response.data;
   }
 };

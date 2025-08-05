@@ -141,12 +141,11 @@ router.get('/goals', authMiddleware, async (req: AuthRequest, res: Response) => 
 
   if (error) return res.status(400).json({ error });
 
-  // Get user's claimed goals
+  // Get user's reflected goals (any reflection status)
   const { data: claimedGoals } = await supabase
     .from('user_goals')
     .select('goal_id')
-    .eq('user_id', user_id)
-    .eq('completed', true);
+    .eq('user_id', user_id);
 
   const claimedGoalIds = new Set(claimedGoals?.map(claim => claim.goal_id) || []);
 
@@ -696,7 +695,7 @@ router.get('/charity/history', authMiddleware, async (req: AuthRequest, res: Res
         status,
         charity_distribution_details!inner(
           allocated_amount,
-          charity_organizations!inner(name, category, allocation_percentage)
+          charity_organizations!inner(name, category, allocation_percentage, wallet_address)
         )
       `)
       .eq('user_id', userId)
@@ -711,6 +710,224 @@ router.get('/charity/history', authMiddleware, async (req: AuthRequest, res: Res
   } catch (error: any) {
     console.error('Charity history error:', error);
     res.status(500).json({ error: `Failed to fetch history: ${error.message}` });
+  }
+});
+
+// Distribute selected amounts to specific organizations
+router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { selections } = req.body; // { orgId: amount, orgId2: amount2, ... }
+
+    if (!selections || Object.keys(selections).length === 0) {
+      return res.status(400).json({ error: 'No organizations selected' });
+    }
+
+    // Get user's charity purse balance
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('charity_purse')
+      .eq('user_id', userId)
+      .single();
+
+    if (walletError || !wallet) {
+      return res.status(400).json({ error: 'Wallet not found' });
+    }
+
+    const charityPurseBalance = wallet.charity_purse || 0;
+    const totalSelected = Object.values(selections).reduce((sum: number, amount: any) => sum + parseFloat(amount), 0);
+
+    if (totalSelected > charityPurseBalance) {
+      return res.status(400).json({ error: 'Selected amount exceeds charity purse balance' });
+    }
+
+    if (totalSelected <= 0) {
+      return res.status(400).json({ error: 'Invalid donation amounts' });
+    }
+
+    // Validate all organization IDs exist
+    const orgIds = Object.keys(selections);
+    const { data: organizations, error: orgError } = await supabase
+      .from('charity_organizations')
+      .select('*')
+      .in('id', orgIds)
+      .eq('is_active', true);
+
+    if (orgError || !organizations || organizations.length !== orgIds.length) {
+      return res.status(400).json({ error: 'Some selected organizations are invalid' });
+    }
+
+    // Create distribution record
+    const { data: distribution, error: distError } = await supabase
+      .from('charity_distributions')
+      .insert([{
+        user_id: userId,
+        total_amount: totalSelected,
+        status: 'completed'
+      }])
+      .select()
+      .single();
+
+    if (distError || !distribution) {
+      return res.status(400).json({ error: 'Failed to create distribution record' });
+    }
+
+    // Create distribution details for selected organizations
+    const distributionDetails = [];
+    for (const [orgId, amount] of Object.entries(selections)) {
+      const donationAmount = parseFloat(amount as string);
+      if (donationAmount > 0) {
+        distributionDetails.push({
+          distribution_id: distribution.id,
+          charity_org_id: orgId,
+          allocated_amount: donationAmount
+        });
+      }
+    }
+
+    // Insert distribution details
+    const { error: detailsError } = await supabase
+      .from('charity_distribution_details')
+      .insert(distributionDetails);
+
+    if (detailsError) {
+      console.error('Distribution details error:', detailsError);
+      return res.status(400).json({ error: 'Failed to record distribution details' });
+    }
+
+    // Deduct selected amount from charity purse
+    const { error: updateError } = await supabase
+      .from('wallets')
+      .update({ charity_purse: charityPurseBalance - totalSelected })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.error('Wallet update error:', updateError);
+      return res.status(400).json({ error: 'Failed to update wallet' });
+    }
+
+    // Get final distribution details with organization info
+    const response = await supabase
+      .from('charity_distribution_details')
+      .select(`
+        allocated_amount,
+        charity_organizations!inner(name, category, wallet_address)
+      `)
+      .eq('distribution_id', distribution.id);
+
+    res.json({
+      message: 'Selected charity distribution completed successfully!',
+      distribution_id: distribution.id,
+      total_distributed: totalSelected,
+      details: response.data
+    });
+
+  } catch (error: any) {
+    console.error('Selected charity distribution error:', error);
+    res.status(500).json({ error: `Distribution failed: ${error.message}` });
+  }
+});
+
+// Direct donation to a specific organization
+router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { organization_id, amount, from_purse } = req.body;
+    
+    // console.log('Charity donation request:', { userId, organization_id, amount, from_purse });
+
+    if (!organization_id || !amount || !from_purse) {
+      return res.status(400).json({ error: 'Missing required fields: organization_id, amount, from_purse' });
+    }
+
+    const donationAmount = parseFloat(amount);
+    if (isNaN(donationAmount) || donationAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid donation amount' });
+    }
+
+    // console.log('Validating organization:', organization_id);
+    // Validate organization exists and is active
+    const { data: organization, error: orgError } = await supabase
+      .from('charity_organizations')
+      .select('*')
+      .eq('id', organization_id)
+      .eq('is_active', true)
+      .single();
+
+    if (orgError || !organization) {
+        return res.status(400).json({ error: 'Organization not found or inactive' });
+    }
+    // Get user's wallet
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (walletError || !wallet) {
+      return res.status(400).json({ error: 'Wallet not found' });
+    }
+
+    // Check if user has sufficient balance in the selected purse
+    const purseBalance = wallet[`${from_purse}_purse`];
+    
+    if (purseBalance < donationAmount) {
+      return res.status(400).json({ error: `Insufficient balance in ${from_purse} purse` });
+    }
+
+    // Create donation record in charity_distributions table
+    
+    const { data: donation, error: donationError } = await supabase
+      .from('charity_distributions')
+      .insert([{
+        user_id: userId,
+        total_amount: donationAmount,
+        status: 'completed'
+      }])
+      .select()
+      .single();
+
+    if (donationError || !donation) {
+      return res.status(400).json({ error: `Failed to create donation record: ${donationError?.message || 'Unknown error'}` });
+    }
+
+    // Create donation detail record
+    const { error: detailError } = await supabase
+      .from('charity_distribution_details')
+      .insert([{
+        distribution_id: donation.id,
+        charity_org_id: organization_id,
+        allocated_amount: donationAmount
+      }]);
+
+    if (detailError) {
+      console.error('Donation detail error:', detailError);
+      return res.status(400).json({ error: 'Failed to record donation details' });
+    }
+
+    // Deduct amount from user's purse
+    const { error: updateError } = await supabase
+      .from('wallets')
+      .update({ [`${from_purse}_purse`]: purseBalance - donationAmount })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.error('Wallet update error:', updateError);
+      return res.status(400).json({ error: 'Failed to update wallet' });
+    }
+
+    res.json({
+      message: 'Donation successful!',
+      donation_id: donation.id,
+      organization: organization.name,
+      amount: donationAmount,
+      from_purse,
+      transaction_date: donation.distribution_date
+    });
+
+  } catch (error: any) {
+    console.error('Direct donation error:', error);
+    res.status(500).json({ error: `Donation failed: ${error.message}` });
   }
 });
 
