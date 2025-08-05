@@ -91,3 +91,30 @@ export const walletAPI = {
     return response.data;
   },
 };
+
+// Charity API calls
+export const charityAPI = {
+  // Get all charity organizations
+  getOrganizations: async () => {
+    const response = await api.get('/charity/organizations');
+    return response.data;
+  },
+
+  // Get distribution preview (shows how tokens will be allocated)
+  getDistributionPreview: async () => {
+    const response = await api.get('/charity/preview');
+    return response.data;
+  },
+
+  // Distribute charity purse tokens to organizations
+  distributeTokens: async () => {
+    const response = await api.post('/charity/distribute');
+    return response.data;
+  },
+
+  // Get user's distribution history
+  getDistributionHistory: async () => {
+    const response = await api.get('/charity/history');
+    return response.data;
+  }
+};

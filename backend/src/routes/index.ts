@@ -503,4 +503,268 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
   }
 });
 
+// Get all charity organizations
+router.get('/charity/organizations', async (_req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('charity_organizations')
+      .select('*')
+      .eq('is_active', true)
+      .order('allocation_percentage', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching charity organizations:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json(data);
+  } catch (error: any) {
+    console.error('Charity organizations fetch error:', error);
+    res.status(500).json({ error: `Failed to fetch charity organizations: ${error.message}` });
+  }
+});
+
+// Get charity distribution preview
+router.get('/charity/preview', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    // Get user's charity purse balance
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('charity_purse')
+      .eq('user_id', userId)
+      .single();
+
+    if (walletError || !wallet) {
+      return res.status(400).json({ error: 'Wallet not found' });
+    }
+
+    // Get charity organizations
+    const { data: charities, error: charityError } = await supabase
+      .from('charity_organizations')
+      .select('*')
+      .eq('is_active', true)
+      .order('allocation_percentage', { ascending: false });
+
+    if (charityError) {
+      return res.status(400).json({ error: charityError.message });
+    }
+
+    const charityPurseBalance = wallet.charity_purse || 0;
+    
+    // Calculate allocations
+    const preview = charities.map(charity => ({
+      ...charity,
+      allocated_amount: Math.floor((charityPurseBalance * charity.allocation_percentage) / 100)
+    }));
+
+    res.json({
+      charity_purse_balance: charityPurseBalance,
+      total_to_distribute: charityPurseBalance,
+      allocations: preview
+    });
+  } catch (error: any) {
+    console.error('Charity preview error:', error);
+    res.status(500).json({ error: `Failed to generate preview: ${error.message}` });
+  }
+});
+
+// Distribute charity purse to organizations
+router.post('/charity/distribute', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    // Get user's charity purse balance
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('charity_purse')
+      .eq('user_id', userId)
+      .single();
+
+    if (walletError || !wallet) {
+      return res.status(400).json({ error: 'Wallet not found' });
+    }
+
+    const charityPurseBalance = wallet.charity_purse || 0;
+
+    if (charityPurseBalance <= 0) {
+      return res.status(400).json({ error: 'No tokens available in charity purse' });
+    }
+
+    // Get charity organizations
+    const { data: charities, error: charityError } = await supabase
+      .from('charity_organizations')
+      .select('*')
+      .eq('is_active', true);
+
+    if (charityError || !charities || charities.length === 0) {
+      return res.status(400).json({ error: 'No active charity organizations found' });
+    }
+
+    // Create distribution record
+    const { data: distribution, error: distError } = await supabase
+      .from('charity_distributions')
+      .insert([{
+        user_id: userId,
+        total_amount: charityPurseBalance,
+        status: 'completed'
+      }])
+      .select()
+      .single();
+
+    if (distError || !distribution) {
+      return res.status(400).json({ error: 'Failed to create distribution record' });
+    }
+
+    // Calculate and insert distribution details
+    const distributionDetails = [];
+    let totalAllocated = 0;
+
+    for (const charity of charities) {
+      const allocatedAmount = Math.floor((charityPurseBalance * charity.allocation_percentage) / 100);
+      totalAllocated += allocatedAmount;
+
+      if (allocatedAmount > 0) {
+        distributionDetails.push({
+          distribution_id: distribution.id,
+          charity_org_id: charity.id,
+          allocated_amount: allocatedAmount
+        });
+      }
+    }
+
+    // Insert distribution details
+    const { error: detailsError } = await supabase
+      .from('charity_distribution_details')
+      .insert(distributionDetails);
+
+    if (detailsError) {
+      console.error('Distribution details error:', detailsError);
+      return res.status(400).json({ error: 'Failed to record distribution details' });
+    }
+
+    // Zero out charity purse
+    const { error: updateError } = await supabase
+      .from('wallets')
+      .update({ charity_purse: 0 })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.error('Wallet update error:', updateError);
+      return res.status(400).json({ error: 'Failed to update wallet' });
+    }
+
+    // Return success with distribution details
+    const response = await supabase
+      .from('charity_distribution_details')
+      .select(`
+        allocated_amount,
+        charity_organizations!inner(name, category, wallet_address, allocation_percentage)
+      `)
+      .eq('distribution_id', distribution.id);
+
+    res.json({
+      message: 'Charity distribution completed successfully!',
+      distribution_id: distribution.id,
+      total_distributed: charityPurseBalance,
+      details: response.data
+    });
+
+  } catch (error: any) {
+    console.error('Charity distribution error:', error);
+    res.status(500).json({ error: `Distribution failed: ${error.message}` });
+  }
+});
+
+// Get user's charity distribution history
+router.get('/charity/history', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    const { data, error } = await supabase
+      .from('charity_distributions')
+      .select(`
+        id,
+        total_amount,
+        distribution_date,
+        status,
+        charity_distribution_details!inner(
+          allocated_amount,
+          charity_organizations!inner(name, category, allocation_percentage)
+        )
+      `)
+      .eq('user_id', userId)
+      .order('distribution_date', { ascending: false });
+
+    if (error) {
+      console.error('History fetch error:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json(data);
+  } catch (error: any) {
+    console.error('Charity history error:', error);
+    res.status(500).json({ error: `Failed to fetch history: ${error.message}` });
+  }
+});
+
+// Seed charity organizations (development only)
+router.post('/charity/seed', async (_req: Request, res: Response) => {
+  try {
+    const charityOrgs = [
+      {
+        name: 'ISKCON Foundation',
+        category: 'faith-based',
+        description: 'International Society for Krishna Consciousness - Spiritual and cultural development',
+        wallet_address: '0x1234567890ABCDEF1234567890ABCDEF12345678',
+        allocation_percentage: 40.00,
+        is_active: true
+      },
+      {
+        name: 'American Cancer Society',
+        category: 'healthcare',
+        description: 'Leading organization in cancer research, patient support, and prevention',
+        wallet_address: '0x2345678901BCDEF12345678901BCDEF123456789',
+        allocation_percentage: 30.00,
+        is_active: true
+      },
+      {
+        name: 'Senior Citizens Welfare',
+        category: 'elderly-care',
+        description: 'Providing care, support and dignity to elderly community members',
+        wallet_address: '0x3456789012CDEF123456789012CDEF12345678AB',
+        allocation_percentage: 20.00,
+        is_active: true
+      },
+      {
+        name: 'Global Education Initiative',
+        category: 'education',
+        description: 'Ensuring quality education access for underprivileged children worldwide',
+        wallet_address: '0x456789013DEF123456789013DEF123456789ABC',
+        allocation_percentage: 10.00,
+        is_active: true
+      }
+    ];
+
+    const { data, error } = await supabase
+      .from('charity_organizations')
+      .insert(charityOrgs)
+      .select();
+
+    if (error) {
+      console.error('Charity seed error:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ 
+      message: 'Charity organizations seeded successfully', 
+      organizations: data 
+    });
+  } catch (error: any) {
+    console.error('Charity seed error:', error);
+    res.status(500).json({ error: `Failed to seed charity organizations: ${error.message}` });
+  }
+});
+
 export default router;
