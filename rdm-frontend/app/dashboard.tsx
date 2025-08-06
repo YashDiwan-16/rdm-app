@@ -325,6 +325,7 @@ export default function DashboardScreen() {
           <View style={styles.emptyState}>
             <ThemedText style={styles.emptyText}>No custom goals created yet</ThemedText>
             <ThemedText style={styles.emptySubText}>Tap &quot;Create Task&quot; to add your first goal!</ThemedText>
+            <ThemedText style={styles.emptySubText}>Arise, Awake, and stop not till the goal is reached</ThemedText>
           </View>
         ) : (
           goals
