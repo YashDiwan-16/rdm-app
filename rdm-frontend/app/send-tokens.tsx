@@ -246,10 +246,7 @@ export default function SendTokensScreen() {
           >
             <ThemedText style={styles.backButtonText}>←</ThemedText>
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <ThemedText style={styles.title}>Send Tokens</ThemedText>
-            <ThemedText style={styles.subtitle}>Transfer your earned tokens</ThemedText>
-          </View>
+          
           <TouchableOpacity 
             style={styles.historyButton}
             onPress={() => {
@@ -263,7 +260,7 @@ export default function SendTokensScreen() {
 
         {/* Send Mode Toggle */}
         <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Transfer Mode</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Send Tokens </ThemedText>
           <View style={styles.toggleContainer}>
             <TouchableOpacity
               style={[styles.toggleButton, sendMode === 'self' && styles.toggleButtonActive]}
