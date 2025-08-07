@@ -9,14 +9,14 @@ const cors_1 = __importDefault(require("cors"));
 const index_1 = __importDefault(require("./routes/index"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-// CORS configuration
+// CORS configuration - allow all origins in development
 app.use((0, cors_1.default)({
-    origin: ['http://localhost:8081', 'http://localhost:19006', 'exp://localhost:8081', 'exp://localhost:19006'],
+    origin: true, // Allow all origins in development
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
 }));
 app.use(express_1.default.json());
 app.use('/api', index_1.default);
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = parseInt(process.env.PORT || '3001');
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT} and accessible from network`));

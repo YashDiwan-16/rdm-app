@@ -989,4 +989,60 @@ router.post('/charity/seed', async (_req: Request, res: Response) => {
   }
 });
 
+// Get transaction history (for send tokens history)
+router.get('/wallet/transactions', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const user_id = req.user!.id;
+  console.log('🔍 Fetching transactions for user:', user_id);
+
+  try {
+    // First, let's just try to get all transactions to see if the table exists
+    const { data: allTransactions, error: allError } = await supabase
+      .from('transactions')
+      .select('*')
+      .limit(5);
+
+    if (allError) {
+      console.error('❌ Error accessing transactions table:', allError);
+      return res.status(400).json({ error: `Cannot access transactions table: ${allError.message}` });
+    }
+
+    console.log('✅ Transactions table accessible, sample data:', allTransactions);
+
+    // Now try to get user-specific transactions
+    const { data: transactions, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('sender_id', user_id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Transaction history error:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      return res.status(400).json({ error: `Failed to fetch transaction history: ${error.message}` });
+    }
+
+    console.log('📊 Found transactions:', transactions?.length || 0);
+
+    // Format the transactions for the frontend
+    const formattedTransactions = transactions?.map(transaction => ({
+      id: transaction.id,
+      amount: transaction.amount,
+      from_purse: transaction.from_purse,
+      to_purse: transaction.to_purse,
+      type: transaction.type,
+      created_at: transaction.created_at,
+      is_sent: transaction.sender_id === user_id,
+      is_received: transaction.receiver_id === user_id,
+      is_self_transfer: transaction.sender_id === transaction.receiver_id,
+      other_party_email: null, // Will be null for now since we removed the join
+      charity_info: transaction.charity_info
+    })) || [];
+
+    res.json(formattedTransactions);
+  } catch (error: any) {
+    console.error('❌ Unexpected error:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
+  }
+});
+
 export default router;

@@ -10,6 +10,7 @@ import {
     TouchableOpacity,
     View,
     ActivityIndicator,
+    Modal,
 } from 'react-native';
 import { walletAPI } from '@/services/apiServices';
 import { useWallet } from '@/contexts/WalletContext';
@@ -26,6 +27,9 @@ export default function SendTokensScreen() {
   const [showFromPurseDropdown, setShowFromPurseDropdown] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [selectedPercentage, setSelectedPercentage] = useState<string>('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [transactionHistory, setTransactionHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
 
   const getSelfTransferPurses = () => {
@@ -48,6 +52,19 @@ export default function SendTokensScreen() {
     ].filter(purse => purse.balance > 0);
   };
 
+
+  const loadTransactionHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      const history = await walletAPI.getTransactionHistory();
+      setTransactionHistory(history);
+    } catch (error) {
+      console.error('Error loading transaction history:', error);
+      Alert.alert('Error', 'Failed to load transaction history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const calculatePercentageAmount = (percentage: string) => {
     if (!fromPurse || !wallet) return 0;
@@ -98,7 +115,7 @@ export default function SendTokensScreen() {
         Alert.alert('Error', 'Insufficient balance in source purse');
         return;
       }
-
+        
       try {
         setTransferLoading(true);
         await walletAPI.transferTokens({
@@ -233,6 +250,15 @@ export default function SendTokensScreen() {
             <ThemedText style={styles.title}>Send Tokens</ThemedText>
             <ThemedText style={styles.subtitle}>Transfer your earned tokens</ThemedText>
           </View>
+          <TouchableOpacity 
+            style={styles.historyButton}
+            onPress={() => {
+              setShowHistory(true);
+              loadTransactionHistory();
+            }}
+          >
+            <ThemedText style={styles.historyButtonText}>📊</ThemedText>
+          </TouchableOpacity>
         </View>
 
         {/* Send Mode Toggle */}
@@ -532,6 +558,74 @@ export default function SendTokensScreen() {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+      
+      {/* Transaction History Modal */}
+      <Modal
+        visible={showHistory}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <ThemedText style={styles.modalTitle}>Transaction History</ThemedText>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowHistory(false)}
+            >
+              <ThemedText style={styles.closeButtonText}>✕</ThemedText>
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView 
+            style={styles.modalContent}
+            contentContainerStyle={styles.modalContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {historyLoading ? (
+              <View style={styles.historyLoadingContainer}>
+                <ActivityIndicator size="large" color={Colors.light.accent} />
+                <ThemedText style={styles.historyLoadingText}>Loading history...</ThemedText>
+              </View>
+            ) : transactionHistory.length === 0 ? (
+              <View style={styles.emptyHistoryContainer}>
+                <ThemedText style={styles.emptyHistoryText}>No transactions yet</ThemedText>
+                <ThemedText style={styles.emptyHistorySubText}>Your token transfers will appear here</ThemedText>
+              </View>
+            ) : (
+              transactionHistory.map((transaction, index) => (
+                <View key={index} style={styles.historyCard}>
+                  <View style={styles.historyHeader}>
+                    <ThemedText style={styles.historyDate}>
+                      {new Date(transaction.created_at).toLocaleDateString()}
+                    </ThemedText>
+                    <ThemedText style={[styles.historyAmount, transaction.is_sent ? styles.sentAmount : styles.receivedAmount]}>
+                      {transaction.is_sent ? '-' : '+'}{transaction.amount} RDM
+                    </ThemedText>
+                  </View>
+                  
+                  <View style={styles.historyDetail}>
+                    <View style={styles.historyInfo}>
+                      <ThemedText style={styles.historyType}>
+                        {transaction.is_self_transfer ? (
+                          transaction.to_purse === 'charity' ? '❤️ To Charity Purse' : 
+                          `💼 ${transaction.from_purse} → ${transaction.to_purse}`
+                        ) : transaction.is_sent ? (
+                          `📤 Sent to ${transaction.other_party_email || 'Someone'}`
+                        ) : (
+                          `📥 Received from ${transaction.other_party_email || 'Someone'}`
+                        )}
+                      </ThemedText>
+                      <ThemedText style={styles.historyTime}>
+                        {new Date(transaction.created_at).toLocaleTimeString()}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -568,6 +662,7 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: 'center',
+    marginHorizontal: 60, // Add margin to prevent overlap with back and history buttons
   },
   title: {
     fontSize: 32,
@@ -865,5 +960,141 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.icon,
     lineHeight: 20,
+  },
+
+  // History button
+  historyButton: {
+    position: 'absolute',
+    right: 24,
+    top: 70,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.light.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyButtonText: {
+    fontSize: 20,
+    color: '#fff',
+  },
+
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    paddingTop: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#fff',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.light.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: Colors.light.icon,
+  },
+  modalContent: {
+    flex: 1,
+    padding: 24,
+  },
+  modalContentContainer: {
+    paddingBottom: 40,
+    flexGrow: 1,
+  },
+
+  // History styles
+  historyLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  historyLoadingText: {
+    marginTop: 16,
+    color: Colors.light.text,
+    fontSize: 16,
+  },
+  emptyHistoryContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyHistoryText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.icon,
+    marginBottom: 8,
+  },
+  emptyHistorySubText: {
+    fontSize: 14,
+    color: Colors.light.icon,
+    textAlign: 'center',
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  historyDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.primary,
+  },
+  historyAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sentAmount: {
+    color: '#EF4444', // Red for sent
+  },
+  receivedAmount: {
+    color: '#10B981', // Green for received
+  },
+  historyDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyType: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.primary,
+    marginBottom: 4,
+  },
+  historyTime: {
+    fontSize: 12,
+    color: Colors.light.icon,
   },
 });

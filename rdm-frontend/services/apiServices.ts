@@ -90,6 +90,12 @@ export const walletAPI = {
     const response = await api.post('/wallet/transfer', transferData);
     return response.data;
   },
+
+  // Get transaction history
+  getTransactionHistory: async () => {
+    const response = await api.get('/wallet/transactions');
+    return response.data;
+  },
 };
 
 // Charity API calls
