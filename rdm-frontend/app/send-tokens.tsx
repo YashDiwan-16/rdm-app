@@ -78,9 +78,9 @@ export default function SendTokensScreen() {
       case 'max':
         return balance;
       case '50':
-        return Math.floor(balance * 0.5);
+        return parseFloat((balance * 0.5).toFixed(2));
       case '25':
-        return Math.floor(balance * 0.25);
+        return parseFloat((balance * 0.25).toFixed(2));
       default:
         return 0;
     }

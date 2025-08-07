@@ -88,9 +88,9 @@ export default function CharityScreen() {
       case 'max':
         return charityBalance;
       case '50':
-        return Math.floor(charityBalance * 0.5);
+        return parseFloat((charityBalance * 0.5).toFixed(2));
       case '25':
-        return Math.floor(charityBalance * 0.25);
+        return parseFloat((charityBalance * 0.25).toFixed(2));
       default:
         return 0;
     }
