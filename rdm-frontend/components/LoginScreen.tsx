@@ -15,7 +15,7 @@ import {
     View,
     ActivityIndicator,
 } from 'react-native';
-import { initializeAPI, runDiagnostics, NetworkConfig } from '@/services/api';
+import { initializeAPI, testConnection, ServerConnection } from '@/services/api';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -50,34 +50,31 @@ export function LoginScreen() {
   const handleNetworkDiagnostic = async () => {
     setIsCheckingNetwork(true);
     try {
-      console.log('🔧 Starting comprehensive network diagnostics...');
-      const diagnostics = await runDiagnostics();
+      console.log('🔧 Testing network connection...');
       
-      if (diagnostics.success && diagnostics.workingIP) {
+      // Reset connection first to force fresh discovery
+      ServerConnection.resetConnection();
+      const result = await testConnection();
+      
+      if (result.success) {
         // Update API with working server
         await initializeAPI();
         
         Alert.alert(
           'Connection Fixed! ✅', 
-          `Found working server at ${diagnostics.workingIP}\n\n` +
-          `Response time: ${diagnostics.results.find(r => r.success)?.responseTime}ms\n\n` +
-          `Your app is now connected and ready!`,
+          `Successfully connected to server at ${result.serverIP}:3001\n\n` +
+          `Your app is now ready for login and signup!`,
           [{ text: 'Great!', style: 'default' }]
         );
       } else {
-        // Show detailed diagnostic results
-        const resultText = diagnostics.results
-          .map(r => `${r.ip}: ${r.success ? '✅ Working' : '❌ ' + (r.error || 'Failed')}`)
-          .join('\n');
-        
         Alert.alert(
-          'No Server Found ❌', 
-          `Tested ${diagnostics.results.length} IP addresses:\n\n${resultText}\n\n` +
+          'Connection Failed ❌', 
+          `Could not connect to any server.\n\n` +
+          `Error: ${result.error}\n\n` +
           `Solutions:\n` +
-          `1. Start backend: npm run dev\n` +
-          `2. Check WiFi connection\n` +
-          `3. Update PRIMARY_IP in api.ts\n` +
-          `4. Disable firewall temporarily`,
+          `• Ensure backend is running (npm run dev)\n` +
+          `• Check WiFi connection\n` +
+          `• Verify both devices on same network`,
           [
             { text: 'Help Me', onPress: () => showDetailedHelp() },
             { text: 'OK', style: 'default' }
@@ -86,10 +83,10 @@ export function LoginScreen() {
       }
     } catch (error: any) {
       Alert.alert(
-        'Diagnostics Failed ❌', 
-        `Could not run network tests.\n\n` +
+        'Test Failed ❌', 
+        `Network test encountered an error.\n\n` +
         `Error: ${error?.message || 'Unknown error'}\n\n` +
-        `Please check your device's network settings.`,
+        `Please check your network settings.`,
         [{ text: 'OK' }]
       );
     } finally {
@@ -107,14 +104,13 @@ export function LoginScreen() {
       `   • Look for "Server running on port 3001"\n\n` +
       `2. NETWORK CHECK:\n` +
       `   • Both devices on same WiFi\n` +
-      `   • Mac IP: ${NetworkConfig.PRIMARY_IP}\n` +
-      `   • Try browser: http://${NetworkConfig.PRIMARY_IP}:3001/api/health\n\n` +
+      `   • Try browser: http://192.168.0.2:3001/api/health\n\n` +
       `3. FIREWALL:\n` +
       `   • Temporarily disable Mac firewall\n` +
       `   • Or allow port 3001 in settings\n\n` +
       `4. STILL NOT WORKING?\n` +
-      `   • Find your Mac's new IP address\n` +
-      `   • Update PRIMARY_IP in api.ts`,
+      `   • Find your Mac's IP address\n` +
+      `   • Restart both apps`,
       [{ text: 'Got It', style: 'default' }]
     );
   };

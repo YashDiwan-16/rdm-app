@@ -630,10 +630,12 @@ router.post('/charity/distribute-selected', auth_1.authMiddleware, (req, res) =>
         }
         const charityPurseBalance = wallet.charity_purse || 0;
         const totalSelected = Object.values(selections).reduce((sum, amount) => sum + parseFloat(amount), 0);
-        if (totalSelected > charityPurseBalance) {
+        // Convert to integer for database
+        const totalSelectedInt = Math.floor(totalSelected);
+        if (totalSelectedInt > charityPurseBalance) {
             return res.status(400).json({ error: 'Selected amount exceeds charity purse balance' });
         }
-        if (totalSelected <= 0) {
+        if (totalSelectedInt <= 0) {
             return res.status(400).json({ error: 'Invalid donation amounts' });
         }
         // Validate all organization IDs exist
@@ -651,7 +653,7 @@ router.post('/charity/distribute-selected', auth_1.authMiddleware, (req, res) =>
             .from('charity_distributions')
             .insert([{
                 user_id: userId,
-                total_amount: totalSelected,
+                total_amount: totalSelectedInt,
                 status: 'completed'
             }])
             .select()
@@ -663,11 +665,12 @@ router.post('/charity/distribute-selected', auth_1.authMiddleware, (req, res) =>
         const distributionDetails = [];
         for (const [orgId, amount] of Object.entries(selections)) {
             const donationAmount = parseFloat(amount);
-            if (donationAmount > 0) {
+            const donationAmountInt = Math.floor(donationAmount);
+            if (donationAmountInt > 0) {
                 distributionDetails.push({
                     distribution_id: distribution.id,
                     charity_org_id: orgId,
-                    allocated_amount: donationAmount
+                    allocated_amount: donationAmountInt
                 });
             }
         }
@@ -682,7 +685,7 @@ router.post('/charity/distribute-selected', auth_1.authMiddleware, (req, res) =>
         // Deduct selected amount from charity purse
         const { error: updateError } = yield supabase_1.default
             .from('wallets')
-            .update({ charity_purse: charityPurseBalance - totalSelected })
+            .update({ charity_purse: charityPurseBalance - totalSelectedInt })
             .eq('user_id', userId);
         if (updateError) {
             console.error('Wallet update error:', updateError);
@@ -699,7 +702,7 @@ router.post('/charity/distribute-selected', auth_1.authMiddleware, (req, res) =>
         res.json({
             message: 'Selected charity distribution completed successfully!',
             distribution_id: distribution.id,
-            total_distributed: totalSelected,
+            total_distributed: totalSelectedInt,
             details: response.data
         });
     }
@@ -721,6 +724,8 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
         if (isNaN(donationAmount) || donationAmount <= 0) {
             return res.status(400).json({ error: 'Invalid donation amount' });
         }
+        // Convert to integer (database expects integer values)
+        const donationAmountInt = Math.floor(donationAmount);
         // console.log('Validating organization:', organization_id);
         // Validate organization exists and is active
         const { data: organization, error: orgError } = yield supabase_1.default
@@ -743,7 +748,7 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
         }
         // Check if user has sufficient balance in the selected purse
         const purseBalance = wallet[`${from_purse}_purse`];
-        if (purseBalance < donationAmount) {
+        if (purseBalance < donationAmountInt) {
             return res.status(400).json({ error: `Insufficient balance in ${from_purse} purse` });
         }
         // Create donation record in charity_distributions table
@@ -751,7 +756,7 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
             .from('charity_distributions')
             .insert([{
                 user_id: userId,
-                total_amount: donationAmount,
+                total_amount: donationAmountInt,
                 status: 'completed'
             }])
             .select()
@@ -765,7 +770,7 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
             .insert([{
                 distribution_id: donation.id,
                 charity_org_id: organization_id,
-                allocated_amount: donationAmount
+                allocated_amount: donationAmountInt
             }]);
         if (detailError) {
             console.error('Donation detail error:', detailError);
@@ -774,7 +779,7 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
         // Deduct amount from user's purse
         const { error: updateError } = yield supabase_1.default
             .from('wallets')
-            .update({ [`${from_purse}_purse`]: purseBalance - donationAmount })
+            .update({ [`${from_purse}_purse`]: purseBalance - donationAmountInt })
             .eq('user_id', userId);
         if (updateError) {
             console.error('Wallet update error:', updateError);
@@ -784,7 +789,7 @@ router.post('/charity/donate', auth_1.authMiddleware, (req, res) => __awaiter(vo
             message: 'Donation successful!',
             donation_id: donation.id,
             organization: organization.name,
-            amount: donationAmount,
+            amount: donationAmountInt,
             from_purse,
             transaction_date: donation.distribution_date
         });
