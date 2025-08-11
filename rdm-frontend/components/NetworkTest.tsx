@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
-import { testConnection, initializeAPI, ServerConnection } from '../services/api';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
+import { testConnection, initializeAPI, NetworkHelper } from '../services/api';
 
 const NetworkTest: React.FC = () => {
   const [testing, setTesting] = useState(false);
@@ -14,7 +14,7 @@ const NetworkTest: React.FC = () => {
       const testResult = await testConnection();
       
       if (testResult.success) {
-        setResult(`✅ Connected successfully!\nServer: ${testResult.serverIP}:3001`);
+        setResult(`✅ Connected successfully!\nServer: ${testResult.serverURL}`);
       } else {
         setResult(`❌ Connection failed\nError: ${testResult.error}`);
       }
@@ -27,17 +27,23 @@ const NetworkTest: React.FC = () => {
 
   const handleResetConnection = async () => {
     setTesting(true);
-    setResult('Resetting connection...');
+    setResult('Clearing network cache and reconnecting...');
     
     try {
-      ServerConnection.resetConnection();
+      await NetworkHelper.clearCache();
       await initializeAPI();
-      setResult('✅ Connection reset successfully!');
+      setResult('✅ Network cache cleared and connection reset!');
     } catch (error: any) {
       setResult(`❌ Reset failed: ${error.message}`);
     }
     
     setTesting(false);
+  };
+
+  const showDebugInfo = async () => {
+    const info = await NetworkHelper.getDebugInfo();
+    const debugText = info ? JSON.stringify(info, null, 2) : 'No network cache found';
+    Alert.alert('Network Debug Info', debugText);
   };
 
   return (
@@ -61,7 +67,15 @@ const NetworkTest: React.FC = () => {
         onPress={handleResetConnection}
         disabled={testing}
       >
-        <Text style={styles.buttonText}>Reset Connection</Text>
+        <Text style={styles.buttonText}>Reset & Clear Cache</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        style={[styles.button, styles.debugButton]}
+        onPress={showDebugInfo}
+        disabled={testing}
+      >
+        <Text style={styles.buttonText}>Show Debug Info</Text>
       </TouchableOpacity>
       
       {result ? (
@@ -95,6 +109,9 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     backgroundColor: '#FF6B6B',
+  },
+  debugButton: {
+    backgroundColor: '#6B7280',
   },
   buttonText: {
     color: '#fff',

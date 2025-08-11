@@ -423,12 +423,19 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
         return res.status(400).json({ error: `Insufficient tokens in ${from_purse} purse` });
       }
 
+      // Handle decimal amounts properly (round to 2 decimal places)
+      const preciseAmount = Math.round(amount * 100) / 100;
+      
+      // Calculate new balances
+      const fromBalance = Math.round((wallets[`${from_purse}_purse`] - preciseAmount) * 100) / 100;
+      const toBalance = Math.round((wallets[`${to_purse}_purse`] + preciseAmount) * 100) / 100;
+
       // Transfer from source purse to destination purse
       const { error: updateError } = await supabase
         .from('wallets')
         .update({
-          [`${from_purse}_purse`]: wallets[`${from_purse}_purse`] - amount,
-          [`${to_purse}_purse`]: wallets[`${to_purse}_purse`] + amount
+          [`${from_purse}_purse`]: fromBalance,
+          [`${to_purse}_purse`]: toBalance
         })
         .eq('user_id', sender_id);
 
@@ -437,18 +444,33 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
         return res.status(400).json({ error: `Transfer failed: ${updateError.message}` });
       }
 
+      // Enhanced charity info for transfers to charity purse
+      let enhancedCharityInfo = charity_info;
+      if (to_purse === 'charity') {
+        enhancedCharityInfo = {
+          ...charity_info,
+          transfer_type: 'to_charity_purse',
+          ready_for_donation: true,
+          description: `Moved ${preciseAmount} RDM to charity purse for future donations`
+        };
+      }
+
       // Record the transaction
       await supabase.from('transactions').insert([{
         sender_id,
         receiver_id: sender_id,
         from_purse,
         to_purse,
-        amount,
+        amount: preciseAmount,
         type,
-        charity_info
+        charity_info: enhancedCharityInfo
       }]);
 
-      res.json({ message: `Successfully transferred ${amount} tokens from ${from_purse} purse to ${to_purse} purse` });
+      const message = to_purse === 'charity' ? 
+        `Successfully moved ${preciseAmount} tokens to Charity Purse - ready for donations!` :
+        `Successfully transferred ${preciseAmount} tokens from ${from_purse} purse to ${to_purse} purse`;
+        
+      res.json({ message });
 
     } else if (type === 'peer') {
       // For peer transfers, use the specified from_purse
@@ -460,10 +482,15 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
         return res.status(400).json({ error: 'Insufficient funds in source purse' });
       }
 
+      // Handle decimal amounts properly
+      const preciseAmount = Math.round(amount * 100) / 100;
+      
+      const newSenderBalance = Math.round((wallets[`${from_purse}_purse`] - preciseAmount) * 100) / 100;
+
       // Deduct from sender's purse
       await supabase
         .from('wallets')
-        .update({ [`${from_purse}_purse`]: wallets[`${from_purse}_purse`] - amount })
+        .update({ [`${from_purse}_purse`]: newSenderBalance })
         .eq('user_id', sender_id);
 
       // Add to receiver's purse
@@ -477,10 +504,12 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
         return res.status(400).json({ error: 'Receiver not found' });
       }
 
+      const newReceiverBalance = Math.round((receiverWallet[`${to_purse}_purse`] + preciseAmount) * 100) / 100;
+      
       await supabase
         .from('wallets')
         .update({
-          [`${to_purse}_purse`]: receiverWallet[`${to_purse}_purse`] + amount
+          [`${to_purse}_purse`]: newReceiverBalance
         })
         .eq('user_id', to_user_id);
 
@@ -490,12 +519,12 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
         receiver_id: to_user_id,
         from_purse,
         to_purse,
-        amount,
+        amount: preciseAmount,
         type,
         charity_info
       }]);
 
-      res.json({ message: `Successfully sent ${amount} tokens` });
+      res.json({ message: `Successfully sent ${preciseAmount} tokens` });
 
     } else {
       return res.status(400).json({ error: 'Invalid transfer type' });
@@ -557,10 +586,10 @@ router.get('/charity/preview', authMiddleware, async (req: AuthRequest, res: Res
 
     const charityPurseBalance = wallet.charity_purse || 0;
     
-    // Calculate allocations
+    // Calculate allocations (convert to cents for integer storage)
     const preview = charities.map(charity => ({
       ...charity,
-      allocated_amount: Math.floor((charityPurseBalance * charity.allocation_percentage) / 100)
+      allocated_amount: Math.round((charityPurseBalance * charity.allocation_percentage) / 100)
     }));
 
     res.json({
@@ -606,12 +635,13 @@ router.post('/charity/distribute', authMiddleware, async (req: AuthRequest, res:
       return res.status(400).json({ error: 'No active charity organizations found' });
     }
 
-    // Create distribution record
+    // Create distribution record (convert to cents for integer storage)
+    const charityPurseBalanceCents = Math.round(charityPurseBalance * 100);
     const { data: distribution, error: distError } = await supabase
       .from('charity_distributions')
       .insert([{
         user_id: userId,
-        total_amount: charityPurseBalance,
+        total_amount: charityPurseBalanceCents,
         status: 'completed'
       }])
       .select()
@@ -626,7 +656,7 @@ router.post('/charity/distribute', authMiddleware, async (req: AuthRequest, res:
     let totalAllocated = 0;
 
     for (const charity of charities) {
-      const allocatedAmount = Math.floor((charityPurseBalance * charity.allocation_percentage) / 100);
+      const allocatedAmount = Math.round((charityPurseBalance * charity.allocation_percentage) / 100);
       totalAllocated += allocatedAmount;
 
       if (allocatedAmount > 0) {
@@ -706,7 +736,17 @@ router.get('/charity/history', authMiddleware, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: error.message });
     }
 
-    res.json(data);
+    // Format data for display (convert cents back to dollars for charity tables)
+    const formattedData = data?.map(item => ({
+      ...item,
+      total_amount: (item.total_amount / 100).toFixed(2),
+      charity_distribution_details: item.charity_distribution_details?.map(detail => ({
+        ...detail,
+        allocated_amount: (detail.allocated_amount / 100).toFixed(2)
+      }))
+    }));
+
+    res.json(formattedData);
   } catch (error: any) {
     console.error('Charity history error:', error);
     res.status(500).json({ error: `Failed to fetch history: ${error.message}` });
@@ -737,14 +777,14 @@ router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequ
     const charityPurseBalance = wallet.charity_purse || 0;
     const totalSelected = Object.values(selections).reduce((sum: number, amount: any) => sum + parseFloat(amount), 0);
 
-    // Convert to integer for database
-    const totalSelectedInt = Math.floor(totalSelected);
+    // Convert to cents for integer storage in database
+    const totalSelectedCents = Math.round(totalSelected * 100);
 
-    if (totalSelectedInt > charityPurseBalance) {
+    if (totalSelected > charityPurseBalance) {
       return res.status(400).json({ error: 'Selected amount exceeds charity purse balance' });
     }
 
-    if (totalSelectedInt <= 0) {
+    if (totalSelected <= 0) {
       return res.status(400).json({ error: 'Invalid donation amounts' });
     }
 
@@ -765,7 +805,7 @@ router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequ
       .from('charity_distributions')
       .insert([{
         user_id: userId,
-        total_amount: totalSelectedInt,
+        total_amount: totalSelectedCents,
         status: 'completed'
       }])
       .select()
@@ -779,12 +819,12 @@ router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequ
     const distributionDetails = [];
     for (const [orgId, amount] of Object.entries(selections)) {
       const donationAmount = parseFloat(amount as string);
-      const donationAmountInt = Math.floor(donationAmount);
-      if (donationAmountInt > 0) {
+      const donationAmountCents = Math.round(donationAmount * 100);
+      if (donationAmountCents > 0) {
         distributionDetails.push({
           distribution_id: distribution.id,
           charity_org_id: orgId,
-          allocated_amount: donationAmountInt
+          allocated_amount: donationAmountCents
         });
       }
     }
@@ -802,7 +842,7 @@ router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequ
     // Deduct selected amount from charity purse
     const { error: updateError } = await supabase
       .from('wallets')
-      .update({ charity_purse: charityPurseBalance - totalSelectedInt })
+      .update({ charity_purse: Math.round((charityPurseBalance - totalSelected) * 100) / 100 })
       .eq('user_id', userId);
 
     if (updateError) {
@@ -822,7 +862,7 @@ router.post('/charity/distribute-selected', authMiddleware, async (req: AuthRequ
     res.json({
       message: 'Selected charity distribution completed successfully!',
       distribution_id: distribution.id,
-      total_distributed: totalSelectedInt,
+      total_distributed: totalSelected,
       details: response.data
     });
 
@@ -849,8 +889,8 @@ router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: 'Invalid donation amount' });
     }
 
-    // Convert to integer (database expects integer values)
-    const donationAmountInt = Math.floor(donationAmount);
+    // Keep decimal precision (round to 2 decimal places)
+    const donationAmountDecimal = Math.round(donationAmount * 100) / 100;
 
     // console.log('Validating organization:', organization_id);
     // Validate organization exists and is active
@@ -878,17 +918,19 @@ router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Res
     // Check if user has sufficient balance in the selected purse
     const purseBalance = wallet[`${from_purse}_purse`];
     
-    if (purseBalance < donationAmountInt) {
+    if (purseBalance < donationAmountDecimal) {
       return res.status(400).json({ error: `Insufficient balance in ${from_purse} purse` });
     }
 
     // Create donation record in charity_distributions table
+    // Convert to cents for integer storage in database
+    const donationAmountCents = Math.round(donationAmountDecimal * 100);
     
     const { data: donation, error: donationError } = await supabase
       .from('charity_distributions')
       .insert([{
         user_id: userId,
-        total_amount: donationAmountInt,
+        total_amount: donationAmountCents,
         status: 'completed'
       }])
       .select()
@@ -904,7 +946,7 @@ router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Res
       .insert([{
         distribution_id: donation.id,
         charity_org_id: organization_id,
-        allocated_amount: donationAmountInt
+        allocated_amount: donationAmountCents
       }]);
 
     if (detailError) {
@@ -912,10 +954,11 @@ router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: 'Failed to record donation details' });
     }
 
-    // Deduct amount from user's purse
+    // Deduct amount from user's purse (keep as decimal)
+    const newBalance = Math.round((purseBalance - donationAmountDecimal) * 100) / 100;
     const { error: updateError } = await supabase
       .from('wallets')
-      .update({ [`${from_purse}_purse`]: purseBalance - donationAmountInt })
+      .update({ [`${from_purse}_purse`]: newBalance })
       .eq('user_id', userId);
 
     if (updateError) {
@@ -923,11 +966,31 @@ router.post('/charity/donate', authMiddleware, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: 'Failed to update wallet' });
     }
 
+    // Record transaction in transactions table for history tracking
+    const { error: transactionError } = await supabase.from('transactions').insert([{
+      sender_id: userId,
+      receiver_id: userId, // Self-transaction type
+      from_purse,
+      to_purse: 'charity-donated',
+      amount: donationAmountDecimal,
+      type: 'charity-donation',
+      charity_info: {
+        organization_name: organization.name,
+        organization_id: organization_id,
+        donation_type: 'direct'
+      }
+    }]);
+
+    if (transactionError) {
+      console.error('Transaction record error:', transactionError);
+      // Don't fail the donation if transaction recording fails, but log it
+    }
+
     res.json({
       message: 'Donation successful!',
       donation_id: donation.id,
       organization: organization.name,
-      amount: donationAmountInt,
+      amount: donationAmountDecimal,
       from_purse,
       transaction_date: donation.distribution_date
     });
@@ -1030,10 +1093,10 @@ router.get('/wallet/transactions', authMiddleware, async (req: AuthRequest, res:
 
     console.log('📊 Found transactions:', transactions?.length || 0);
 
-    // Format the transactions for the frontend
+    // Format the transactions for the frontend (keep decimal values)
     const formattedTransactions = transactions?.map(transaction => ({
       id: transaction.id,
-      amount: transaction.amount,
+      amount: transaction.amount, // Keep decimal amounts as-is
       from_purse: transaction.from_purse,
       to_purse: transaction.to_purse,
       type: transaction.type,

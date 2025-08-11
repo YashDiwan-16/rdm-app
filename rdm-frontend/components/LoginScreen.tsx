@@ -15,7 +15,7 @@ import {
     View,
     ActivityIndicator,
 } from 'react-native';
-import { initializeAPI, testConnection, ServerConnection } from '@/services/api';
+import { initializeAPI, testConnection, NetworkHelper } from '@/services/api';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -52,8 +52,8 @@ export function LoginScreen() {
     try {
       console.log('🔧 Testing network connection...');
       
-      // Reset connection first to force fresh discovery
-      ServerConnection.resetConnection();
+      // Clear network cache first to force fresh discovery
+      await NetworkHelper.clearCache();
       const result = await testConnection();
       
       if (result.success) {
@@ -62,7 +62,7 @@ export function LoginScreen() {
         
         Alert.alert(
           'Connection Fixed! ✅', 
-          `Successfully connected to server at ${result.serverIP}:3001\n\n` +
+          `Successfully connected to server:\n${result.serverURL}\n\n` +
           `Your app is now ready for login and signup!`,
           [{ text: 'Great!', style: 'default' }]
         );
@@ -76,6 +76,7 @@ export function LoginScreen() {
           `• Check WiFi connection\n` +
           `• Verify both devices on same network`,
           [
+            { text: 'Advanced Debug', onPress: () => router.push('/network-debug') },
             { text: 'Help Me', onPress: () => showDetailedHelp() },
             { text: 'OK', style: 'default' }
           ]
@@ -169,23 +170,34 @@ export function LoginScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            {/* Network Diagnostic Button */}
-            <TouchableOpacity
-              style={[styles.diagnosticButton, isCheckingNetwork && styles.buttonDisabled]}
-              onPress={handleNetworkDiagnostic}
-              disabled={isCheckingNetwork}
-            >
-              {isCheckingNetwork ? (
-                <View style={styles.diagnosticLoadingContainer}>
-                  <ActivityIndicator size="small" color={Colors.light.accent} />
-                  <ThemedText style={styles.diagnosticLoadingText}>Testing servers...</ThemedText>
-                </View>
-              ) : (
-                <ThemedText style={styles.diagnosticButtonText}>
-                  🔧 Auto-Fix Network Connection
+            {/* Network Diagnostic Buttons */}
+            <View style={styles.diagnosticContainer}>
+              <TouchableOpacity
+                style={[styles.diagnosticButton, isCheckingNetwork && styles.buttonDisabled]}
+                onPress={handleNetworkDiagnostic}
+                disabled={isCheckingNetwork}
+              >
+                {isCheckingNetwork ? (
+                  <View style={styles.diagnosticLoadingContainer}>
+                    <ActivityIndicator size="small" color={Colors.light.accent} />
+                    <ThemedText style={styles.diagnosticLoadingText}>Testing servers...</ThemedText>
+                  </View>
+                ) : (
+                  <ThemedText style={styles.diagnosticButtonText}>
+                    🔧 Quick Fix Connection
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.advancedButton}
+                onPress={() => router.push('/network-debug')}
+              >
+                <ThemedText style={styles.advancedButtonText}>
+                  🔍 Advanced Debug
                 </ThemedText>
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Footer */}
@@ -295,6 +307,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.light.accent,
   },
+  diagnosticContainer: {
+    marginTop: 16,
+    gap: 8,
+  },
   diagnosticButton: {
     height: 48,
     backgroundColor: 'transparent',
@@ -303,7 +319,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+  },
+  advancedButton: {
+    height: 40,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: Colors.light.icon,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  advancedButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.light.icon,
   },
   diagnosticButtonText: {
     fontSize: 16,

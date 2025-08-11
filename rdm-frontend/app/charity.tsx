@@ -38,6 +38,12 @@ export default function CharityScreen() {
   const [donationHistory, setDonationHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Helper function to format amounts consistently
+  const formatAmount = (amount: any) => {
+    const num = parseFloat(amount);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+  };
+
   // Demo wallet balances for organizations (in real app, this would come from blockchain)
   const [orgWalletBalances] = useState<{[key: string]: number}>({
     // These would be real wallet addresses in production
@@ -144,21 +150,15 @@ export default function CharityScreen() {
               // console.log('Sending donation payload:', donationPayload);
               await charityAPI.donateToOrganization(donationPayload);
               
-              Alert.alert(
-                'Donation Sent! 🎉',
-                `Successfully sent ${donationAmount} RDM to ${selectedOrg.name}!`,
-                [
-                  {
-                    text: 'OK',
-                    onPress: async () => {
-                      setShowDonationModal(false);
-                      setSelectedOrg(null);
-                      setSelectedPercentage('');
-                      await refreshWallet();
-                    }
-                  }
-                ]
-              );
+              
+              // Close donation modal and show success modal
+              setShowDonationModal(false);
+              setSelectedOrg(null);
+              setSelectedPercentage('');
+              await refreshWallet();
+              
+              // Show simple success message
+              Alert.alert('Donation Successful!', `Successfully donated ${donationAmount.toFixed(2)} RDM to ${selectedOrg.name}`);
             } catch (error: any) {
               console.error('Donation error:', error);
               console.error('Error response:', error.response?.data);
@@ -254,7 +254,7 @@ export default function CharityScreen() {
         <View style={styles.section}>
           <View style={styles.balanceCard}>
             <ThemedText style={styles.balanceLabel}>Charity Purse</ThemedText>
-            <ThemedText style={styles.balanceValue}>{charityBalance} RDM</ThemedText>
+            <ThemedText style={styles.balanceValue}>{formatAmount(charityBalance)} RDM</ThemedText>
             <ThemedText style={styles.balanceDescription}>
               {charityBalance > 0 
                 ? `Available to send to charity organizations`
@@ -379,7 +379,6 @@ export default function CharityScreen() {
       <Modal
         visible={showDonationModal}
         animationType="slide"
-        presentationStyle="pageSheet"
         onRequestClose={() => {
           console.log('Modal onRequestClose called');
           setShowDonationModal(false);
@@ -449,7 +448,7 @@ export default function CharityScreen() {
             <View style={styles.sourceCard}>
               <ThemedText style={styles.sourceTitle}>From: Charity Purse</ThemedText>
               <ThemedText style={styles.sourceBalance}>
-                Available: {charityBalance} RDM
+                Available: {formatAmount(charityBalance)} RDM
               </ThemedText>
             </View>
 
@@ -479,7 +478,7 @@ export default function CharityScreen() {
                           styles.percentageAmount,
                           selectedPercentage === percentage && styles.percentageAmountSelected
                         ]}>
-                          {amount} RDM
+                          {formatAmount(amount)} RDM
                         </ThemedText>
                       </TouchableOpacity>
                     );
@@ -506,7 +505,7 @@ export default function CharityScreen() {
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <ThemedText style={styles.donateButtonText}>
-                      ❤️ Send {calculateDonationAmount(selectedPercentage)} RDM
+                      ❤️ Send {formatAmount(calculateDonationAmount(selectedPercentage))} RDM
                     </ThemedText>
                   )}
                 </TouchableOpacity>
@@ -534,7 +533,6 @@ export default function CharityScreen() {
       <Modal
         visible={showHistory}
         animationType="slide"
-        presentationStyle="pageSheet"
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -570,7 +568,7 @@ export default function CharityScreen() {
                       {new Date(donation.distribution_date).toLocaleDateString()}
                     </ThemedText>
                     <ThemedText style={styles.historyTotal}>
-                      {donation.total_amount} RDM
+                      {parseFloat(donation.total_amount).toFixed(2)} RDM
                     </ThemedText>
                   </View>
                   
@@ -590,7 +588,7 @@ export default function CharityScreen() {
                         </View>
                       </View>
                       <ThemedText style={styles.historyAmount}>
-                        {detail.allocated_amount} RDM
+                        {parseFloat(detail.allocated_amount).toFixed(2)} RDM
                       </ThemedText>
                     </View>
                   ))}
@@ -600,6 +598,7 @@ export default function CharityScreen() {
           </ScrollView>
         </View>
       </Modal>
+      
     </View>
   );
 }
@@ -729,11 +728,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 2,
     borderColor: Colors.light.lightBlue,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
   },
   organizationCardDisabled: {
     opacity: 0.6,
@@ -769,15 +768,20 @@ const styles = StyleSheet.create({
     color: Colors.light.icon,
   },
   donateArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.light.accent,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EC4899',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   donateArrowText: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#fff',
     fontWeight: 'bold',
   },
@@ -982,8 +986,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   percentageOptionSelected: {
-    borderColor: Colors.light.accent,
-    backgroundColor: Colors.light.accent,
+    borderColor: '#EC4899',
+    backgroundColor: '#EC4899',
   },
   percentageText: {
     fontSize: 16,
@@ -1007,13 +1011,13 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   donateButton: {
-    backgroundColor: Colors.light.accent,
+    backgroundColor: '#EC4899',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    shadowColor: Colors.light.accent,
+    shadowColor: '#EC4899',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
   },

@@ -47,6 +47,7 @@ export const useGoals = () => {
     name: string;
     description: string;
     associated_tokens: number;
+    pledge_amount: number;
     target_time: string;
   }) => {
     try {
@@ -65,15 +66,15 @@ export const useGoals = () => {
     }
   };
 
-  const completeGoal = async (goalId: string, completed: boolean) => {
+  const reflectGoal = async (goalId: string, reflectionStatus: 'done' | 'partly done' | 'not done') => {
     try {
       setLoading(true);
       setError(null);
-      await goalsAPI.completeGoal({ goal_id: goalId, completed });
+      await goalsAPI.reflectOnGoal({ goal_id: goalId, reflection_status: reflectionStatus });
       // Optionally refresh goals list
       await fetchGoals();
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to complete goal';
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to reflect on goal';
       setError(errorMessage);
       Alert.alert('Error', errorMessage);
       throw err;
@@ -92,7 +93,7 @@ export const useGoals = () => {
     error,
     fetchGoals,
     createCustomGoal,
-    completeGoal,
+    reflectGoal,
   };
 };
 

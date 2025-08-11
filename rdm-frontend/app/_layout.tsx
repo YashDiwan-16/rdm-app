@@ -32,6 +32,7 @@ export default function RootLayout() {
               <Stack.Screen name="dashboard" options={{ headerShown: false }} />
               <Stack.Screen name="send-tokens" options={{ headerShown: false }} />
               <Stack.Screen name="charity" options={{ headerShown: false }} />
+              <Stack.Screen name="network-debug" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
             </Stack>
             <StatusBar style="auto" />

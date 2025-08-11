@@ -1,98 +1,24 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { NetworkHelper } from './networkHelper';
 
-// Automatic IP Detection and Network configuration
-const getLocalIP = async (): Promise<string> => {
-  // For development, we can use a more reliable detection method
-  const commonIPs = [
-    '192.168.0.2',   // Current known working IP
-    '192.168.1.1', '192.168.1.2', '192.168.1.3', '192.168.1.4',
-    '192.168.0.1', '192.168.0.3', '192.168.0.4', '192.168.0.5',
-    '10.0.0.1', '10.0.0.2', '172.16.0.1', '192.168.43.1'
-  ];
-  
-  // Test each IP quickly
-  for (const ip of commonIPs) {
-    try {
-      const response = await fetch(`http://${ip}:3001/api/health`, {
-        method: 'GET',
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: AbortSignal.timeout(3000)
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.status === 'ok') {
-          console.log(`✅ Found working server at: ${ip}`);
-          await AsyncStorage.setItem('lastWorkingIP', ip);
-          return ip;
-        }
-      }
-    } catch (error) {
-      // Continue to next IP
-    }
-  }
-  
-  // If nothing works, return the known working IP as fallback
-  return '192.168.0.2';
-};
-
+// Network configuration
 const NetworkConfig = {
   PORT: 3001,
   TIMEOUT: 10000,
-  getServerIP: getLocalIP
 };
 
-// Simplified server connection
-class ServerConnection {
-  private static workingIP: string | null = null;
-  
-  static async findWorkingServer(): Promise<string> {
-    console.log('🔍 Discovering server...');
-    
-    // Try cached IP first
-    if (this.workingIP) {
-      try {
-        const response = await fetch(`http://${this.workingIP}:${NetworkConfig.PORT}/api/health`, {
-          method: 'GET',
-          signal: AbortSignal.timeout(3000)
-        });
-        if (response.ok) {
-          console.log(`✅ Cached IP working: ${this.workingIP}`);
-          return this.workingIP;
-        }
-      } catch (error) {
-        this.workingIP = null;
-      }
-    }
-    
-    // Use automatic IP detection
-    const detectedIP = await NetworkConfig.getServerIP();
-    this.workingIP = detectedIP;
-    return detectedIP;
-  }
-  
-  static resetConnection() {
-    this.workingIP = null;
-  }
-}
-
-// Get API base URL
+// Get API base URL using the reliable network helper
 const getAPIBaseURL = async (): Promise<string> => {
   if (__DEV__) {
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      const serverIP = await ServerConnection.findWorkingServer();
-      return `http://${serverIP}:${NetworkConfig.PORT}/api`;
-    } else {
-      return `http://localhost:${NetworkConfig.PORT}/api`;
-    }
+    return await NetworkHelper.getServerURL();
   }
   return 'https://your-production-api.com/api';
 };
 
-// Initialize API with fallback
-let currentBaseURL = `http://192.168.0.2:${NetworkConfig.PORT}/api`;
+// Initialize API with platform-appropriate defaults
+let currentBaseURL = `http://localhost:${NetworkConfig.PORT}/api`;
 
 const initializeAPI = async (): Promise<string> => {
   try {
@@ -103,10 +29,14 @@ const initializeAPI = async (): Promise<string> => {
     return currentBaseURL;
   } catch (error) {
     console.error('❌ API initialization failed:', error);
-    // Use fallback
-    currentBaseURL = `http://192.168.0.2:${NetworkConfig.PORT}/api`;
+    // Smart fallback based on platform
+    const fallbackURL = Platform.OS === 'ios' ? 
+      `http://localhost:${NetworkConfig.PORT}/api` : 
+      `http://192.168.0.2:${NetworkConfig.PORT}/api`;
+    
+    currentBaseURL = fallbackURL;
     api.defaults.baseURL = currentBaseURL;
-    console.log(`⚠️ Using fallback URL: ${currentBaseURL}`);
+    console.log(`⚠️ Using ${Platform.OS} fallback URL: ${currentBaseURL}`);
     return currentBaseURL;
   }
 };
@@ -155,39 +85,55 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
     
-    // Auto-retry network errors (only once per request)
-    if ((error.message === 'Network Error' || error.code === 'ECONNREFUSED') && !error.config?._autoRetried) {
+    // Auto-retry network errors with better logic (only once per request)
+    const isNetworkError = error.message === 'Network Error' || 
+                          error.code === 'ECONNREFUSED' || 
+                          error.name === 'AbortError' ||
+                          error.message?.includes('Failed to fetch');
+                          
+    if (isNetworkError && !error.config?._autoRetried) {
       console.log('🔄 Connection failed, attempting recovery...');
       
       try {
         error.config._autoRetried = true;
         
-        // Reset connection and find new server
-        ServerConnection.resetConnection();
+        // Clear cache and find new server
+        await NetworkHelper.clearCache();
         const newBaseURL = await initializeAPI();
-        error.config.baseURL = newBaseURL;
+        
+        // Update the request config
+        const retryConfig = {
+          ...error.config,
+          baseURL: newBaseURL,
+          timeout: 10000 // Increase timeout for retry
+        };
         
         console.log(`🔄 Retrying with ${newBaseURL}`);
-        const retryResponse = await api.request(error.config);
+        const retryResponse = await api.request(retryConfig);
         console.log('✅ Recovery successful!');
         return retryResponse;
         
       } catch (retryError: any) {
         console.log('❌ Recovery failed:', retryError?.message);
+        // Don't throw the retry error, throw a more user-friendly message
       }
     }
     
-    // Provide helpful error message
-    if (error.message === 'Network Error' || error.code === 'ECONNREFUSED') {
+    // Provide helpful error message for network issues (reuse the existing check)
+    if (isNetworkError) {
       const currentIP = currentBaseURL.match(/http:\/\/([^:]+):/)?.[1] || 'unknown';
-      throw new Error(
-        `Unable to connect to server at ${currentIP}:${NetworkConfig.PORT}\n\n` +
-        `Quick fixes:\n` +
-        `• Ensure backend server is running (npm run dev)\n` +
-        `• Check both devices are on same WiFi network\n` +
-        `• Restart the app and try again\n\n` +
-        `Current server: ${currentBaseURL}`
-      );
+      
+      // Check if we're in development and suggest simple fixes
+      if (__DEV__) {
+        throw new Error(
+          `Cannot connect to development server.\n\n` +
+          `• Make sure backend is running: npm run dev\n` +
+          `• Check IP address: ${currentIP}\n` +
+          `• Try restarting both frontend and backend`
+        );
+      } else {
+        throw new Error('Network connection failed. Please check your internet connection.');
+      }
     }
     
     return Promise.reject(error);
@@ -195,21 +141,30 @@ api.interceptors.response.use(
 );
 
 // Quick connection test function
-const testConnection = async (): Promise<{ success: boolean; serverIP?: string; error?: string }> => {
+const testConnection = async (): Promise<{ success: boolean; serverURL?: string; error?: string }> => {
   console.log('🔧 Testing connection...');
   
   try {
-    const serverIP = await ServerConnection.findWorkingServer();
-    const response = await fetch(`http://${serverIP}:${NetworkConfig.PORT}/api/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000)
+    const serverURL = await NetworkHelper.getServerURL();
+    
+    // Test the server directly
+    const healthURL = serverURL.replace('/api', '/api/health');
+    const timeoutPromise = new Promise<Response>((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout')), 3000);
     });
+
+    const fetchPromise = fetch(healthURL, {
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
     
     if (response.ok) {
       const data = await response.json();
       if (data.status === 'ok') {
-        console.log(`✅ Connection successful: ${serverIP}`);
-        return { success: true, serverIP };
+        console.log(`✅ Connection successful: ${serverURL}`);
+        return { success: true, serverURL };
       }
     }
     
@@ -223,13 +178,15 @@ const testConnection = async (): Promise<{ success: boolean; serverIP?: string; 
   }
 };
 
-// Initialize immediately when module loads
-initializeAPI().catch(console.error);
+// Initialize API when module loads with error handling
+initializeAPI().catch((error) => {
+  console.warn('⚠️ Initial API setup failed, will retry on first request:', error.message);
+});
 
 export default api;
 export { 
   initializeAPI, 
   testConnection, 
   NetworkConfig,
-  ServerConnection
+  NetworkHelper
 };

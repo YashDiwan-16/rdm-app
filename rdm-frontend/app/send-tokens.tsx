@@ -31,6 +31,12 @@ export default function SendTokensScreen() {
   const [transactionHistory, setTransactionHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Helper function to format amounts consistently
+  const formatAmount = (amount: any) => {
+    const num = parseFloat(amount);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+  };
+
 
   const getSelfTransferPurses = () => {
     // For self-transfer, show all purses except charity (charity is destination only)
@@ -332,7 +338,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -374,7 +380,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -424,7 +430,7 @@ export default function SendTokensScreen() {
                 />
                 {fromPurse && (
                   <ThemedText style={styles.balanceHint}>
-                    Available: {getSelfTransferPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
+                    Available: {formatAmount(getSelfTransferPurses().find(p => p.key === fromPurse)?.balance || 0)} tokens
                   </ThemedText>
                 )}
               </View>
@@ -470,7 +476,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{purse.balance} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -520,7 +526,7 @@ export default function SendTokensScreen() {
                 />
                 {fromPurse && (
                   <ThemedText style={styles.balanceHint}>
-                    Available: {getFromPurses().find(p => p.key === fromPurse)?.balance || 0} tokens
+                    Available: {formatAmount(getFromPurses().find(p => p.key === fromPurse)?.balance || 0)} tokens
                   </ThemedText>
                 )}
               </View>
@@ -596,16 +602,21 @@ export default function SendTokensScreen() {
                       {new Date(transaction.created_at).toLocaleDateString()}
                     </ThemedText>
                     <ThemedText style={[styles.historyAmount, transaction.is_sent ? styles.sentAmount : styles.receivedAmount]}>
-                      {transaction.is_sent ? '-' : '+'}{transaction.amount} RDM
+                      {transaction.is_sent ? '-' : '+'}{formatAmount(transaction.amount)} RDM
                     </ThemedText>
                   </View>
                   
                   <View style={styles.historyDetail}>
                     <View style={styles.historyInfo}>
                       <ThemedText style={styles.historyType}>
-                        {transaction.is_self_transfer ? (
-                          transaction.to_purse === 'charity' ? '❤️ To Charity Purse' : 
-                          `💼 ${transaction.from_purse} → ${transaction.to_purse}`
+                        {transaction.type === 'charity-donation' ? (
+                          `❤️ Donated to ${transaction.charity_info?.organization_name || 'Charity'}`
+                        ) : transaction.to_purse === 'charity-donated' ? (
+                          `🎁 Charity Donation`
+                        ) : transaction.is_self_transfer ? (
+                          transaction.to_purse === 'charity' ? 
+                            `💝 Moved to Charity Purse` : 
+                            `💼 ${transaction.from_purse?.replace('_', ' ')} → ${transaction.to_purse?.replace('_', ' ')}`
                         ) : transaction.is_sent ? (
                           `📤 Sent to ${transaction.other_party_email || 'Someone'}`
                         ) : (
@@ -615,7 +626,22 @@ export default function SendTokensScreen() {
                       <ThemedText style={styles.historyTime}>
                         {new Date(transaction.created_at).toLocaleTimeString()}
                       </ThemedText>
+                      {transaction.charity_info?.description && (
+                        <ThemedText style={styles.historyDescription}>
+                          {transaction.charity_info.description}
+                        </ThemedText>
+                      )}
                     </View>
+                    {(transaction.type === 'charity-donation' || transaction.to_purse === 'charity-donated') && (
+                      <View style={styles.charityBadge}>
+                        <ThemedText style={styles.charityBadgeText}>DONATED</ThemedText>
+                      </View>
+                    )}
+                    {transaction.to_purse === 'charity' && transaction.is_self_transfer && (
+                      <View style={[styles.charityBadge, { backgroundColor: '#059669' }]}>
+                        <ThemedText style={styles.charityBadgeText}>TO CHARITY</ThemedText>
+                      </View>
+                    )}
                   </View>
                 </View>
               ))
@@ -1079,10 +1105,12 @@ const styles = StyleSheet.create({
   },
   historyDetail: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   historyInfo: {
     flex: 1,
+    marginRight: 12,
   },
   historyType: {
     fontSize: 14,
@@ -1093,5 +1121,28 @@ const styles = StyleSheet.create({
   historyTime: {
     fontSize: 12,
     color: Colors.light.icon,
+  },
+  historyDescription: {
+    fontSize: 11,
+    color: Colors.light.icon,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  charityBadge: {
+    backgroundColor: '#EC4899', // Charity pink
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  charityBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
   },
 });
