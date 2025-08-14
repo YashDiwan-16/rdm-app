@@ -10,6 +10,7 @@ import {
     View,
     ActivityIndicator,
     Modal,
+    TextInput,
 } from 'react-native';
 import { charityAPI } from '@/services/apiServices';
 import { useWallet } from '@/contexts/WalletContext';
@@ -34,6 +35,7 @@ export default function CharityScreen() {
   const [selectedOrg, setSelectedOrg] = useState<CharityOrganization | null>(null);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [selectedPercentage, setSelectedPercentage] = useState<string>('');
+  const [customAmount, setCustomAmount] = useState<string>('');
   const [showHistory, setShowHistory] = useState(false);
   const [donationHistory, setDonationHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -90,6 +92,11 @@ export default function CharityScreen() {
   const calculateDonationAmount = (percentage: string) => {
     const charityBalance = getCharityPurseBalance();
     
+    // If custom amount is entered, use that instead
+    if (customAmount) {
+      return parseFloat(customAmount) || 0;
+    }
+    
     switch (percentage) {
       case 'max':
         return charityBalance;
@@ -109,12 +116,13 @@ export default function CharityScreen() {
   const handleOrganizationSelect = (org: CharityOrganization) => {
     setSelectedOrg(org);
     setSelectedPercentage('');
+    setCustomAmount('');
     setShowDonationModal(true);
   };
 
   const handleDonate = async () => {
-    if (!selectedOrg || !selectedPercentage) {
-      Alert.alert('Incomplete Selection', 'Please select donation amount.');
+    if (!selectedOrg || (!selectedPercentage && !customAmount)) {
+      Alert.alert('Incomplete Selection', 'Please select or enter donation amount.');
       return;
     }
 
@@ -155,6 +163,7 @@ export default function CharityScreen() {
               setShowDonationModal(false);
               setSelectedOrg(null);
               setSelectedPercentage('');
+              setCustomAmount('');
               await refreshWallet();
               
               // Show simple success message
@@ -466,7 +475,10 @@ export default function CharityScreen() {
                           styles.percentageOption,
                           selectedPercentage === percentage && styles.percentageOptionSelected
                         ]}
-                        onPress={() => setSelectedPercentage(percentage)}
+                        onPress={() => {
+                          setSelectedPercentage(percentage);
+                          setCustomAmount(''); // Clear custom amount when percentage selected
+                        }}
                       >
                         <ThemedText style={[
                           styles.percentageText,
@@ -491,10 +503,32 @@ export default function CharityScreen() {
                   </ThemedText>
                 </View>
               )}
+              
+              {/* Custom Amount Input */}
+              {charityBalance > 0 && (
+                <View style={styles.customAmountSection}>
+                  <ThemedText style={styles.customAmountLabel}>Or enter custom amount:</ThemedText>
+                  <View style={styles.customAmountContainer}>
+                    <TextInput
+                      style={styles.customAmountInput}
+                      value={customAmount}
+                      onChangeText={(text) => {
+                        setCustomAmount(text);
+                        if (text) setSelectedPercentage(''); // Clear percentage when custom amount entered
+                      }}
+                      placeholder="Enter amount"
+                      placeholderTextColor={Colors.light.icon}
+                      keyboardType="numeric"
+                      maxLength={10}
+                    />
+                    <ThemedText style={styles.customAmountSuffix}>RDM</ThemedText>
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Send Button */}
-            {selectedPercentage && charityBalance > 0 && (
+            {(selectedPercentage || customAmount) && charityBalance > 0 && (
               <View style={styles.donateButtonContainer}>
                 <TouchableOpacity
                   style={[styles.donateButton, donating && styles.donateButtonDisabled]}
@@ -1178,5 +1212,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  customAmountSection: {
+    marginTop: 16,
+  },
+  customAmountLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.primary,
+    marginBottom: 8,
+  },
+  customAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+  },
+  customAmountInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.light.text,
+    paddingVertical: 12,
+  },
+  customAmountSuffix: {
+    fontSize: 16,
+    color: Colors.light.icon,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
