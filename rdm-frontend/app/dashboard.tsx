@@ -43,7 +43,7 @@ export default function DashboardScreen() {
       const usdtAmount = amount * 0.001;
       return `$${usdtAmount.toFixed(3)} USDT`;
     }
-    return `${amount.toLocaleString()} RDM`;
+    return `${amount.toFixed(2)} RDM`;
   };
 
   const calculateTotalPortfolio = () => {
@@ -421,7 +421,7 @@ export default function DashboardScreen() {
                 keyboardType="numeric"
               />
               <ThemedText style={styles.inputHint}>
-                Available in Base Purse: {wallet?.base_purse || 0} RDM
+                Available in Base Purse: {formatCurrency(wallet?.base_purse || 0)}
               </ThemedText>
             </View>
 

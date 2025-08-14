@@ -50,9 +50,9 @@ export default function CharityScreen() {
   const [orgWalletBalances] = useState<{[key: string]: number}>({
     // These would be real wallet addresses in production
     '0x1234567890ABCDEF1234567890ABCDEF12345678': 15420, // ISKCON
-    '0x2345678901BCDEF12345678901BCDEF123456789': 28750, // Cancer Society  
-    '0x3456789012CDEF123456789012CDEF12345678AB': 9340,  // Senior Care
-    '0x456789013DEF123456789013DEF123456789ABC': 12680, // Education
+    '0x2345678901BCDEF12345678901BCDEF123456789': 8750,  // American Cancer Society
+    '0x3456789012CDEF123456789012CDEF12345678AB': 12300, // Senior Citizens Welfare
+    '0x456789013DEF123456789013DEF123456789ABC': 5680,  // Global Education Initiative
   });
 
   useEffect(() => {
@@ -92,11 +92,6 @@ export default function CharityScreen() {
   const calculateDonationAmount = (percentage: string) => {
     const charityBalance = getCharityPurseBalance();
     
-    // If custom amount is entered, use that instead
-    if (customAmount) {
-      return parseFloat(customAmount) || 0;
-    }
-    
     switch (percentage) {
       case 'max':
         return charityBalance;
@@ -107,6 +102,15 @@ export default function CharityScreen() {
       default:
         return 0;
     }
+  };
+
+  const getFinalDonationAmount = () => {
+    // If custom amount is entered, use that
+    if (customAmount) {
+      return parseFloat(customAmount) || 0;
+    }
+    // Otherwise use the selected percentage
+    return calculateDonationAmount(selectedPercentage);
   };
 
   const getOrganizationWalletBalance = (walletAddress: string) => {
@@ -126,7 +130,7 @@ export default function CharityScreen() {
       return;
     }
 
-    const donationAmount = calculateDonationAmount(selectedPercentage);
+    const donationAmount = getFinalDonationAmount();
     const charityBalance = getCharityPurseBalance();
     
     if (donationAmount <= 0) {
@@ -155,9 +159,7 @@ export default function CharityScreen() {
                 amount: donationAmount,
                 from_purse: 'charity'
               };
-              // console.log('Sending donation payload:', donationPayload);
               await charityAPI.donateToOrganization(donationPayload);
-              
               
               // Close donation modal and show success modal
               setShowDonationModal(false);
@@ -170,10 +172,8 @@ export default function CharityScreen() {
               Alert.alert('Donation Successful!', `Successfully donated ${donationAmount.toFixed(2)} RDM to ${selectedOrg.name}`);
             } catch (error: any) {
               console.error('Donation error:', error);
-              console.error('Error response:', error.response?.data);
-              console.error('Error status:', error.response?.status);
               const errorMessage = error.response?.data?.error || 'Failed to process donation';
-              Alert.alert('Donation Failed', `${errorMessage}\n\nDebug info: ${JSON.stringify(error.response?.data)}`);
+              Alert.alert('Donation Failed', errorMessage);
             } finally {
               setDonating(false);
             }
@@ -206,424 +206,325 @@ export default function CharityScreen() {
       case 'environment': return '#10B981';
       case 'poverty-relief': return '#6B7280';
       case 'disaster-relief': return '#DC2626';
-      case 'animal-welfare': return '#84CC16';
-      default: return Colors.light.accent;
+      case 'animal-welfare': return '#EC4899';
+      default: return Colors.light.primary;
     }
   };
 
-  const formatWalletAddress = (address: string) => {
-    if (address.length <= 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  const getCharityBalance = () => {
+    const charityBalance = getCharityPurseBalance();
+    return charityBalance;
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <ActivityIndicator size="large" color={Colors.light.primary} />
         <ThemedText style={styles.loadingText}>Loading organizations...</ThemedText>
       </View>
     );
   }
 
-  const charityBalance = getCharityPurseBalance();
-  
-  // console.log('Charity balance:', charityBalance);
-  // console.log('Wallet data:', wallet);
-  // console.log('Show donation modal:', showDonationModal);
-  // console.log('Selected org:', selectedOrg?.name);
-
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <ThemedText style={styles.backButtonText}>←</ThemedText>
+        </TouchableOpacity>
+        <ThemedText style={styles.headerTitle}>Donate to Charity</ThemedText>
+        <TouchableOpacity 
+          style={styles.historyButton} 
+          onPress={() => {
+            setShowHistory(true);
+            loadDonationHistory();
+          }}
+        >
+          <ThemedText style={styles.historyButtonText}>📋</ThemedText>
+        </TouchableOpacity>
+      </View>
+
+      {/* Charity Purse Balance */}
+      <View style={styles.balanceCard}>
+        <ThemedText style={styles.balanceLabel}>Charity Purse Balance</ThemedText>
+        <ThemedText style={styles.balanceAmount}>
+          {formatAmount(getCharityBalance())} RDM
+        </ThemedText>
+        <ThemedText style={styles.balanceSubtext}>
+          {getCharityBalance() > 0 
+            ? `Available to send to charity organizations`
+            : 'Transfer tokens to charity purse to donate'
+          }
+        </ThemedText>
+      </View>
+
+      {/* Organizations List */}
+      <View style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>Choose Organization</ThemedText>
         
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <ThemedText style={styles.backButtonText}>←</ThemedText>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <ThemedText style={styles.title}>Charity</ThemedText>
-            <ThemedText style={styles.subtitle}>Choose an organization to support</ThemedText>
+        {organizations.length === 0 ? (
+          <View style={styles.emptyState}>
+            <ThemedText style={styles.emptyText}>No charity organizations available</ThemedText>
           </View>
-          <TouchableOpacity 
-            style={styles.historyButton}
-            onPress={() => {
-              setShowHistory(true);
-              loadDonationHistory();
-            }}
-          >
-            <ThemedText style={styles.historyButtonText}>📊</ThemedText>
-          </TouchableOpacity>
-        </View>
-
-        {/* Charity Purse Balance */}
-        <View style={styles.section}>
-          <View style={styles.balanceCard}>
-            <ThemedText style={styles.balanceLabel}>Charity Purse</ThemedText>
-            <ThemedText style={styles.balanceValue}>{formatAmount(charityBalance)} RDM</ThemedText>
-            <ThemedText style={styles.balanceDescription}>
-              {charityBalance > 0 
-                ? `Available to send to charity organizations`
-                : 'Transfer tokens from other purses to begin giving'
-              }
-            </ThemedText>
-            {charityBalance <= 0 && (
-              <TouchableOpacity 
-                style={styles.transferButton}
-                onPress={() => router.push('/send-tokens')}
-              >
-                <ThemedText style={styles.transferButtonText}>
-                  Transfer Tokens ➜
-                </ThemedText>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Organizations */}
-        <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>
-            {charityBalance > 0 ? 'Select Organization' : 'Available Organizations'}
-          </ThemedText>
+        ) : organizations.map((org) => {
+          const balance = getOrganizationWalletBalance(org.wallet_address);
           
-          
-          {organizations.length === 0 ? (
-            <View style={styles.emptyState}>
-              <ThemedText style={styles.emptyText}>No charity organizations available</ThemedText>
-              <ThemedText style={styles.emptySubText}>Organizations are being loaded...</ThemedText>
-            </View>
-          ) : organizations.map((org) => {
-            const walletBalance = getOrganizationWalletBalance(org.wallet_address);
-            
-            return (
-              <TouchableOpacity 
-                key={org.id}
-                style={[
-                  styles.organizationCard,
-                  charityBalance <= 0 && styles.organizationCardDisabled
-                ]}
-                onPress={() => {
-                  console.log('Organization card pressed:', org.name, 'Balance:', charityBalance);
-                  if (charityBalance <= 0) {
-                    Alert.alert(
-                      'No Charity Tokens', 
-                      'You need tokens in your Charity Purse to make donations.\n\nWould you like to transfer tokens to your Charity Purse first?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { 
-                          text: 'Transfer Tokens', 
-                          onPress: () => router.push('/send-tokens')
-                        }
-                      ]
-                    );
-                    return;
-                  }
-                  handleOrganizationSelect(org);
-                }}
-              >
-                <View style={styles.organizationHeader}>
-                  <View style={[styles.categoryIndicator, { backgroundColor: getCategoryColor(org.category) }]}>
-                    <ThemedText style={styles.categoryIcon}>
-                      {getCategoryIcon(org.category)}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.organizationInfo}>
-                    <ThemedText style={styles.organizationName}>{org.name}</ThemedText>
-                    <ThemedText style={styles.organizationCategory}>
-                      {org.category.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </ThemedText>
-                  </View>
-                  {charityBalance > 0 && (
-                    <View style={styles.donateArrow}>
-                      <ThemedText style={styles.donateArrowText}>→</ThemedText>
-                    </View>
-                  )}
+          return (
+            <TouchableOpacity
+              key={org.id}
+              style={styles.organizationCard}
+              onPress={() => handleOrganizationSelect(org)}
+              disabled={getCharityBalance() <= 0}
+            >
+              <View style={styles.orgHeader}>
+                <View style={styles.orgIconContainer}>
+                  <ThemedText style={styles.orgIcon}>
+                    {getCategoryIcon(org.category)}
+                  </ThemedText>
+                </View>
+                <View style={styles.orgInfo}>
+                  <ThemedText style={styles.orgName}>{org.name}</ThemedText>
+                  <ThemedText style={styles.orgCategory}>
+                    {org.category.replace('-', ' ')} • {org.allocation_percentage}% allocation
+                  </ThemedText>
+                </View>
+                <View style={styles.orgBalance}>
+                  <ThemedText style={styles.orgBalanceAmount}>
+                    {balance.toLocaleString()} RDM
+                  </ThemedText>
+                  <ThemedText style={styles.orgBalanceLabel}>Wallet Balance</ThemedText>
+                </View>
+              </View>
+              
+              <ThemedText style={styles.orgDescription} numberOfLines={2}>
+                {org.description}
+              </ThemedText>
+              
+              <View style={styles.orgFooter}>
+                <View 
+                  style={[styles.categoryBadge, { backgroundColor: getCategoryColor(org.category) }]}
+                >
+                  <ThemedText style={styles.categoryBadgeText}>
+                    {org.category.replace('-', ' ')}
+                  </ThemedText>
                 </View>
                 
-                <ThemedText style={styles.organizationDescription}>
-                  {org.description}
+                <ThemedText style={[
+                  styles.donateIndicator,
+                  getCharityBalance() <= 0 && styles.donateIndicatorDisabled
+                ]}>
+                  {getCharityBalance() > 0 ? 'Tap to donate →' : 'No balance'}
                 </ThemedText>
-                
-                {/* Wallet Info */}
-                <View style={styles.walletInfo}>
-                  <View style={styles.walletAddressContainer}>
-                    <ThemedText style={styles.walletAddressLabel}>Wallet:</ThemedText>
-                    <ThemedText style={styles.walletAddressText}>
-                      {formatWalletAddress(org.wallet_address)}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.walletBalanceContainer}>
-                    <ThemedText style={styles.walletBalanceLabel}>Balance:</ThemedText>
-                    <ThemedText style={styles.walletBalanceValue}>
-                      {walletBalance.toLocaleString()} RDM
-                    </ThemedText>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-        {/* Info Section */}
-        <View style={styles.section}>
-          <View style={styles.infoCard}>
-            <ThemedText style={styles.infoTitle}>How It Works</ThemedText>
-            <ThemedText style={styles.infoText}>
-              • Transfer tokens to Charity Purse from other purses{'\n'}
-              • Select any organization to support{'\n'}
-              • Choose amount (25%, 50%, or MAX) to send{'\n'}
-              • Tokens go directly from Charity Purse to organization{'\n'}
-              • Track all donations in history
-            </ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.bottomPadding} />
-      </ScrollView>
-      
       {/* Donation Modal */}
       <Modal
         visible={showDonationModal}
         animationType="slide"
-        onRequestClose={() => {
-          console.log('Modal onRequestClose called');
-          setShowDonationModal(false);
-          setSelectedOrg(null);
-          setSelectedPercentage('');
-        }}
+        presentationStyle="pageSheet"
       >
         <View style={styles.modalContainer}>
+          {/* Modal Header */}
           <View style={styles.modalHeader}>
-            <ThemedText style={styles.modalTitle}>
-              Send to {selectedOrg?.name}
-            </ThemedText>
             <TouchableOpacity 
               style={styles.closeButton}
               onPress={() => {
                 setShowDonationModal(false);
                 setSelectedOrg(null);
                 setSelectedPercentage('');
+                setCustomAmount('');
               }}
             >
               <ThemedText style={styles.closeButtonText}>✕</ThemedText>
             </TouchableOpacity>
+            <ThemedText style={styles.modalTitle}>Donate to Charity</ThemedText>
+            <View style={styles.placeholder} />
           </View>
-          
-          <ScrollView 
-            style={styles.modalContent}
-            contentContainerStyle={styles.modalContentContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Organization Info */}
-            {selectedOrg ? (
-              <View style={styles.selectedOrgCard}>
-                <View style={styles.selectedOrgHeader}>
-                  <View style={[styles.selectedOrgIcon, { backgroundColor: getCategoryColor(selectedOrg.category) }]}>
-                    <ThemedText style={styles.selectedOrgIconText}>
+
+          <ScrollView style={styles.modalContent} contentContainerStyle={styles.modalScrollContent}>
+            {selectedOrg && (
+              <>
+                {/* Organization Info */}
+                <View style={styles.selectedOrgCard}>
+                  <View style={styles.selectedOrgHeader}>
+                    <ThemedText style={styles.selectedOrgIcon}>
                       {getCategoryIcon(selectedOrg.category)}
                     </ThemedText>
+                    <View style={styles.selectedOrgInfo}>
+                      <ThemedText style={styles.selectedOrgName}>{selectedOrg.name}</ThemedText>
+                      <ThemedText style={styles.selectedOrgCategory}>
+                        {selectedOrg.category.replace('-', ' ')}
+                      </ThemedText>
+                    </View>
                   </View>
-                  <View style={styles.selectedOrgInfo}>
-                    <ThemedText style={styles.selectedOrgName}>{selectedOrg.name}</ThemedText>
-                    <ThemedText style={styles.selectedOrgCategory}>
-                      {selectedOrg.category.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </ThemedText>
-                  </View>
-                </View>
-                <ThemedText style={styles.selectedOrgDescription}>
-                  {selectedOrg.description}
-                </ThemedText>
-                <View style={styles.walletAddressContainer}>
-                  <ThemedText style={styles.walletAddressLabel}>Wallet:</ThemedText>
-                  <ThemedText style={styles.walletAddressText}>
-                    {formatWalletAddress(selectedOrg.wallet_address)}
-                  </ThemedText>
-                  <ThemedText style={styles.walletBalanceLabel}>Balance:</ThemedText>
-                  <ThemedText style={styles.walletBalanceValue}>
-                    {getOrganizationWalletBalance(selectedOrg.wallet_address).toLocaleString()} RDM
+                  <ThemedText style={styles.selectedOrgDescription}>
+                    {selectedOrg.description}
                   </ThemedText>
                 </View>
-              </View>
-            ) : (
-              <View style={styles.selectedOrgCard}>
-                <ThemedText style={styles.selectedOrgName}>No organization selected</ThemedText>
-              </View>
-            )}
 
-            {/* Source Info */}
-            <View style={styles.sourceCard}>
-              <ThemedText style={styles.sourceTitle}>From: Charity Purse</ThemedText>
-              <ThemedText style={styles.sourceBalance}>
-                Available: {formatAmount(charityBalance)} RDM
-              </ThemedText>
-            </View>
-
-            {/* Amount Selection */}
-            <View style={styles.selectionSection}>
-              <ThemedText style={styles.selectionTitle}>Choose Amount</ThemedText>
-              {charityBalance > 0 ? (
-                <View style={styles.percentageOptions}>
-                  {['25', '50', 'max'].map((percentage) => {
-                    const amount = calculateDonationAmount(percentage);
-                    return (
-                      <TouchableOpacity
-                        key={percentage}
-                        style={[
-                          styles.percentageOption,
-                          selectedPercentage === percentage && styles.percentageOptionSelected
-                        ]}
-                        onPress={() => {
-                          setSelectedPercentage(percentage);
-                          setCustomAmount(''); // Clear custom amount when percentage selected
-                        }}
-                      >
-                        <ThemedText style={[
-                          styles.percentageText,
-                          selectedPercentage === percentage && styles.percentageTextSelected
-                        ]}>
-                          {percentage === 'max' ? 'MAX' : `${percentage}%`}
-                        </ThemedText>
-                        <ThemedText style={[
-                          styles.percentageAmount,
-                          selectedPercentage === percentage && styles.percentageAmountSelected
-                        ]}>
-                          {formatAmount(amount)} RDM
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.noTokensMessage}>
-                  <ThemedText style={styles.noTokensText}>
-                    Transfer tokens to your Charity Purse to make donations
+                {/* Source Info */}
+                <View style={styles.sourceCard}>
+                  <ThemedText style={styles.sourceTitle}>From: Charity Purse</ThemedText>
+                  <ThemedText style={styles.sourceBalance}>
+                    Available: {formatAmount(getCharityBalance())} RDM
                   </ThemedText>
                 </View>
-              )}
-              
-              {/* Custom Amount Input */}
-              {charityBalance > 0 && (
-                <View style={styles.customAmountSection}>
-                  <ThemedText style={styles.customAmountLabel}>Or enter custom amount:</ThemedText>
-                  <View style={styles.customAmountContainer}>
-                    <TextInput
-                      style={styles.customAmountInput}
-                      value={customAmount}
-                      onChangeText={(text) => {
-                        setCustomAmount(text);
-                        if (text) setSelectedPercentage(''); // Clear percentage when custom amount entered
-                      }}
-                      placeholder="Enter amount"
-                      placeholderTextColor={Colors.light.icon}
-                      keyboardType="numeric"
-                      maxLength={10}
-                    />
-                    <ThemedText style={styles.customAmountSuffix}>RDM</ThemedText>
-                  </View>
-                </View>
-              )}
-            </View>
 
-            {/* Send Button */}
-            {(selectedPercentage || customAmount) && charityBalance > 0 && (
-              <View style={styles.donateButtonContainer}>
-                <TouchableOpacity
-                  style={[styles.donateButton, donating && styles.donateButtonDisabled]}
-                  onPress={handleDonate}
-                  disabled={donating}
-                >
-                  {donating ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                {/* Amount Selection */}
+                <View style={styles.selectionSection}>
+                  <ThemedText style={styles.selectionTitle}>Choose Amount</ThemedText>
+                  {getCharityBalance() > 0 ? (
+                    <>
+                      <View style={styles.percentageOptions}>
+                        {['25', '50', 'max'].map((percentage) => {
+                          const amount = calculateDonationAmount(percentage);
+                          return (
+                            <TouchableOpacity
+                              key={percentage}
+                              style={[
+                                styles.percentageOption,
+                                selectedPercentage === percentage && styles.percentageOptionSelected
+                              ]}
+                              onPress={() => {
+                                setSelectedPercentage(percentage);
+                                setCustomAmount('');
+                              }}
+                            >
+                              <ThemedText style={[
+                                styles.percentageText,
+                                selectedPercentage === percentage && styles.percentageTextSelected
+                              ]}>
+                                {percentage === 'max' ? 'MAX' : `${percentage}%`}
+                              </ThemedText>
+                              <ThemedText style={[
+                                styles.percentageAmount,
+                                selectedPercentage === percentage && styles.percentageAmountSelected
+                              ]}>
+                                {formatAmount(amount)} RDM
+                              </ThemedText>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      
+                      {/* Custom Amount Input */}
+                      <View style={styles.customAmountSection}>
+                        <ThemedText style={styles.customAmountLabel}>Or enter custom amount:</ThemedText>
+                        <View style={styles.customAmountContainer}>
+                          <TextInput
+                            style={styles.customAmountInput}
+                            value={customAmount}
+                            onChangeText={(text) => {
+                              setCustomAmount(text);
+                              if (text) setSelectedPercentage('');
+                            }}
+                            placeholder="Enter amount"
+                            placeholderTextColor={Colors.light.icon}
+                            keyboardType="numeric"
+                            maxLength={10}
+                          />
+                          <ThemedText style={styles.customAmountSuffix}>RDM</ThemedText>
+                        </View>
+                      </View>
+                    </>
                   ) : (
-                    <ThemedText style={styles.donateButtonText}>
-                      ❤️ Send {formatAmount(calculateDonationAmount(selectedPercentage))} RDM
-                    </ThemedText>
+                    <View style={styles.noTokensMessage}>
+                      <ThemedText style={styles.noTokensText}>
+                        Transfer tokens to your Charity Purse to make donations
+                      </ThemedText>
+                    </View>
                   )}
-                </TouchableOpacity>
-              </View>
-            )}
+                </View>
 
-            {/* Transfer Tokens Button - shown when no charity balance */}
-            {charityBalance <= 0 && (
-              <View style={styles.donateButtonContainer}>
-                <TouchableOpacity
-                  style={[styles.donateButton, { backgroundColor: '#F59E0B' }]}
-                  onPress={() => router.push('/send-tokens')}
-                >
-                  <ThemedText style={styles.donateButtonText}>
-                    💰 Transfer Tokens to Charity Purse
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
+                {/* Send Button */}
+                {(selectedPercentage || customAmount) && getCharityBalance() > 0 && (
+                  <View style={styles.donateButtonContainer}>
+                    <TouchableOpacity
+                      style={[styles.donateButton, donating && styles.donateButtonDisabled]}
+                      onPress={handleDonate}
+                      disabled={donating}
+                    >
+                      {donating ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <ThemedText style={styles.donateButtonText}>
+                          ❤️ Send {formatAmount(getFinalDonationAmount())} RDM
+                        </ThemedText>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
             )}
           </ScrollView>
         </View>
       </Modal>
-      
-      {/* Donation History Modal */}
+
+      {/* History Modal */}
       <Modal
         visible={showHistory}
         animationType="slide"
+        presentationStyle="pageSheet"
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <ThemedText style={styles.modalTitle}>Donation History</ThemedText>
             <TouchableOpacity 
               style={styles.closeButton}
               onPress={() => setShowHistory(false)}
             >
               <ThemedText style={styles.closeButtonText}>✕</ThemedText>
             </TouchableOpacity>
+            <ThemedText style={styles.modalTitle}>Donation History</ThemedText>
+            <View style={styles.placeholder} />
           </View>
-          
-          <ScrollView 
-            style={styles.modalContent}
-            contentContainerStyle={styles.modalContentContainer}
-            showsVerticalScrollIndicator={false}
-          >
+
+          <ScrollView style={styles.modalContent}>
             {historyLoading ? (
-              <View style={styles.historyLoadingContainer}>
-                <ActivityIndicator size="large" color={Colors.light.accent} />
-                <ThemedText style={styles.historyLoadingText}>Loading history...</ThemedText>
+              <View style={styles.historyLoading}>
+                <ActivityIndicator size="large" color={Colors.light.primary} />
+                <ThemedText style={styles.loadingText}>Loading history...</ThemedText>
               </View>
             ) : donationHistory.length === 0 ? (
-              <View style={styles.emptyHistoryContainer}>
-                <ThemedText style={styles.emptyHistoryText}>No donations yet</ThemedText>
-                <ThemedText style={styles.emptyHistorySubText}>Your donations will appear here</ThemedText>
+              <View style={styles.emptyHistory}>
+                <ThemedText style={styles.emptyHistoryText}>No donation history yet</ThemedText>
+                <ThemedText style={styles.emptyHistorySubtext}>
+                  Your donations will appear here
+                </ThemedText>
               </View>
             ) : (
               donationHistory.map((donation, index) => (
                 <View key={index} style={styles.historyCard}>
                   <View style={styles.historyHeader}>
+                    <ThemedText style={styles.historyAmount}>
+                      {formatAmount(donation.total_amount)} RDM
+                    </ThemedText>
                     <ThemedText style={styles.historyDate}>
                       {new Date(donation.distribution_date).toLocaleDateString()}
-                    </ThemedText>
-                    <ThemedText style={styles.historyTotal}>
-                      {parseFloat(donation.total_amount).toFixed(2)} RDM
                     </ThemedText>
                   </View>
                   
                   {donation.charity_distribution_details?.map((detail: any, detailIndex: number) => (
                     <View key={detailIndex} style={styles.historyDetail}>
-                      <View style={styles.historyOrg}>
-                        <ThemedText style={styles.historyOrgIcon}>
+                      <View style={styles.historyDetailHeader}>
+                        <View style={styles.historyDetailLeft}>
                           {getCategoryIcon(detail.charity_organizations.category)}
-                        </ThemedText>
-                        <View style={styles.historyOrgInfo}>
-                          <ThemedText style={styles.historyOrgName}>
-                            {detail.charity_organizations.name}
-                          </ThemedText>
-                          <ThemedText style={styles.historyOrgCategory}>
-                            {detail.charity_organizations.category.replace('-', ' ')}
-                          </ThemedText>
+                          <View style={styles.historyDetailInfo}>
+                            <ThemedText style={styles.historyOrgName}>
+                              {detail.charity_organizations.name}
+                            </ThemedText>
+                            <ThemedText style={styles.historyOrgCategory}>
+                              {detail.charity_organizations.category.replace('-', ' ')}
+                            </ThemedText>
+                          </View>
                         </View>
+                        <ThemedText style={styles.historyDetailAmount}>
+                          {formatAmount(detail.allocated_amount)} RDM
+                        </ThemedText>
                       </View>
-                      <ThemedText style={styles.historyAmount}>
-                        {parseFloat(detail.allocated_amount).toFixed(2)} RDM
-                      </ThemedText>
                     </View>
                   ))}
                 </View>
@@ -632,8 +533,7 @@ export default function CharityScreen() {
           </ScrollView>
         </View>
       </Modal>
-      
-    </View>
+    </ScrollView>
   );
 }
 
@@ -643,7 +543,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.background,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
@@ -656,237 +556,168 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     fontSize: 16,
   },
-  
-  // Header
   header: {
-    paddingTop: 60,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    backgroundColor: '#fff',
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
   backButton: {
-    position: 'absolute',
-    left: 24,
-    top: 70,
-    zIndex: 1,
+    padding: 8,
   },
   backButtonText: {
     fontSize: 16,
+    color: Colors.light.primary,
     fontWeight: '600',
-    color: Colors.light.accent,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 60, // Add margin to prevent overlap with back and history buttons
-  },
-  title: {
-    fontSize: 32,
+  headerTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: Colors.light.primary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.light.icon,
-    textAlign: 'center',
   },
   historyButton: {
-    position: 'absolute',
-    right: 24,
-    top: 70,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.light.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 8,
   },
   historyButtonText: {
-    fontSize: 20,
-    color: '#fff',
-  },
-
-  // Section
-  section: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 20,
+    fontSize: 14,
+    color: Colors.light.accent,
     fontWeight: '600',
-    color: Colors.light.primary,
-    marginBottom: 16,
   },
-
-  // Balance Card
   balanceCard: {
     backgroundColor: '#fff',
+    marginHorizontal: 24,
+    marginBottom: 24,
+    padding: 20,
     borderRadius: 16,
-    padding: 24,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.light.lightBlue,
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
   balanceLabel: {
     fontSize: 16,
-    fontWeight: '600',
     color: Colors.light.icon,
     marginBottom: 8,
   },
-  balanceValue: {
-    fontSize: 36,
+  balanceAmount: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#8B5CF6',
+    color: Colors.light.primary,
     marginBottom: 8,
   },
-  balanceDescription: {
+  balanceSubtext: {
     fontSize: 14,
     color: Colors.light.icon,
     textAlign: 'center',
-    lineHeight: 20,
   },
-
-  // Organization Cards
+  section: {
+    paddingHorizontal: 24,
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.light.primary,
+    marginBottom: 16,
+  },
+  emptyState: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.light.icon,
+    textAlign: 'center',
+  },
   organizationCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
     marginBottom: 16,
-    borderWidth: 2,
-    borderColor: Colors.light.lightBlue,
-    shadowColor: '#EC4899',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
     elevation: 4,
   },
-  organizationCardDisabled: {
-    opacity: 0.6,
-    backgroundColor: '#F9FAFB',
-  },
-  organizationHeader: {
+  orgHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
-  categoryIndicator: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
+  orgIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12,
   },
-  categoryIcon: {
+  orgIcon: {
     fontSize: 24,
   },
-  organizationInfo: {
+  orgInfo: {
     flex: 1,
   },
-  organizationName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.primary,
-    marginBottom: 2,
-  },
-  organizationCategory: {
-    fontSize: 12,
-    color: Colors.light.icon,
-  },
-  donateArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EC4899',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#EC4899',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  donateArrowText: {
+  orgName: {
     fontSize: 18,
-    color: '#fff',
     fontWeight: 'bold',
-  },
-  organizationDescription: {
-    fontSize: 14,
-    color: Colors.light.text,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-
-  // Wallet Info
-  walletInfo: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-  },
-  walletAddressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  walletAddressLabel: {
-    fontSize: 12,
-    color: Colors.light.icon,
-    marginRight: 8,
-    width: 50,
-  },
-  walletAddressText: {
-    fontSize: 12,
-    fontFamily: 'monospace',
     color: Colors.light.primary,
-    fontWeight: '500',
-    flex: 1,
+    marginBottom: 4,
   },
-  walletBalanceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  walletBalanceLabel: {
-    fontSize: 12,
+  orgCategory: {
+    fontSize: 14,
     color: Colors.light.icon,
-    marginRight: 8,
-    width: 50,
+    textTransform: 'capitalize',
   },
-  walletBalanceValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#10B981',
+  orgBalance: {
+    alignItems: 'flex-end',
   },
-
-  // Info Card
-  infoCard: {
-    backgroundColor: '#F0F9FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E0F2FE',
-  },
-  infoTitle: {
+  orgBalanceAmount: {
     fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.primary,
-    marginBottom: 12,
+    fontWeight: 'bold',
+    color: Colors.light.accent,
   },
-  infoText: {
+  orgBalanceLabel: {
+    fontSize: 12,
+    color: Colors.light.icon,
+    marginTop: 2,
+  },
+  orgDescription: {
     fontSize: 14,
     color: Colors.light.text,
     lineHeight: 20,
+    marginBottom: 16,
   },
-
-  // Modal styles
+  orgFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  categoryBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  categoryBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  donateIndicator: {
+    fontSize: 14,
+    color: Colors.light.accent,
+    fontWeight: '600',
+  },
+  donateIndicatorDisabled: {
+    color: Colors.light.icon,
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: Colors.light.background,
@@ -895,46 +726,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
     paddingTop: 60,
+    paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    backgroundColor: '#fff',
+  },
+  closeButton: {
+    padding: 8,
+    width: 40,
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: Colors.light.icon,
+    fontWeight: 'bold',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: Colors.light.primary,
-    flex: 1,
-    textAlign: 'center',
   },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 18,
-    color: Colors.light.icon,
+  placeholder: {
+    width: 40,
   },
   modalContent: {
     flex: 1,
     padding: 24,
   },
-  modalContentContainer: {
-    paddingBottom: 40, // Extra padding at bottom for scroll
-    flexGrow: 1,
+  modalScrollContent: {
+    paddingBottom: 40,
   },
-
-  // Selected Organization
   selectedOrgCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
     padding: 20,
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: Colors.light.accent,
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -944,21 +773,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   selectedOrgIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontSize: 32,
     marginRight: 16,
-  },
-  selectedOrgIconText: {
-    fontSize: 28,
   },
   selectedOrgInfo: {
     flex: 1,
   },
   selectedOrgName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: Colors.light.primary,
     marginBottom: 4,
@@ -966,49 +788,42 @@ const styles = StyleSheet.create({
   selectedOrgCategory: {
     fontSize: 14,
     color: Colors.light.icon,
+    textTransform: 'capitalize',
   },
   selectedOrgDescription: {
     fontSize: 14,
     color: Colors.light.text,
     lineHeight: 20,
-    marginBottom: 12,
   },
-
-  // Source Card
   sourceCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
+    backgroundColor: Colors.light.lightBlue,
     padding: 16,
-    marginBottom: 24,
-    alignItems: 'center',
+    borderRadius: 12,
+    marginBottom: 20,
   },
   sourceTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.primary,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   sourceBalance: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#8B5CF6',
+    fontSize: 14,
+    color: Colors.light.text,
   },
-
-  // Selection sections
   selectionSection: {
     marginBottom: 24,
   },
   selectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: Colors.light.primary,
     marginBottom: 16,
   },
-
-  // Percentage options
   percentageOptions: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 16,
   },
   percentageOption: {
     flex: 1,
@@ -1020,8 +835,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   percentageOptionSelected: {
-    borderColor: '#EC4899',
-    backgroundColor: '#EC4899',
+    borderColor: Colors.light.primary,
+    backgroundColor: Colors.light.lightBlue,
   },
   percentageText: {
     fontSize: 16,
@@ -1030,191 +845,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   percentageTextSelected: {
-    color: '#fff',
+    color: Colors.light.primary,
   },
   percentageAmount: {
     fontSize: 12,
     color: Colors.light.icon,
   },
   percentageAmountSelected: {
-    color: '#fff',
-  },
-
-  // Donate button
-  donateButtonContainer: {
-    marginTop: 24,
-  },
-  donateButton: {
-    backgroundColor: '#EC4899',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#EC4899',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  donateButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  donateButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-
-  // History styles
-  historyLoadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
-  },
-  historyLoadingText: {
-    marginTop: 16,
     color: Colors.light.text,
-    fontSize: 16,
-  },
-  emptyHistoryContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
-  },
-  emptyHistoryText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.icon,
-    marginBottom: 8,
-  },
-  emptyHistorySubText: {
-    fontSize: 14,
-    color: Colors.light.icon,
-    textAlign: 'center',
-  },
-  historyCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  historyDate: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.primary,
-  },
-  historyTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.light.accent,
-  },
-  historyDetail: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  historyOrg: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  historyOrgIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  historyOrgInfo: {
-    flex: 1,
-  },
-  historyOrgName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.primary,
-  },
-  historyOrgCategory: {
-    fontSize: 12,
-    color: Colors.light.icon,
-    textTransform: 'capitalize',
-  },
-  historyAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.accent,
-  },
-
-  // Bottom padding
-  bottomPadding: {
-    height: 40,
-  },
-
-  // Empty state styles
-  emptyState: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: Colors.light.icon,
-    fontWeight: '600',
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: Colors.light.icon,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-
-  // No tokens message styles
-  noTokensMessage: {
-    backgroundColor: '#FEF3C7',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    alignItems: 'center',
-  },
-  noTokensText: {
-    fontSize: 14,
-    color: '#D97706',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-
-  // Transfer button styles
-  transferButton: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  transferButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
   },
   customAmountSection: {
-    marginTop: 16,
+    marginBottom: 16,
   },
   customAmountLabel: {
     fontSize: 16,
@@ -1242,5 +883,114 @@ const styles = StyleSheet.create({
     color: Colors.light.icon,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  noTokensMessage: {
+    backgroundColor: '#FEF3CD',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  noTokensText: {
+    fontSize: 14,
+    color: '#92400E',
+    textAlign: 'center',
+  },
+  donateButtonContainer: {
+    marginTop: 20,
+  },
+  donateButton: {
+    backgroundColor: Colors.light.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  donateButtonDisabled: {
+    backgroundColor: Colors.light.icon,
+  },
+  donateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  historyLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyHistory: {
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyHistoryText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.icon,
+    marginBottom: 8,
+  },
+  emptyHistorySubtext: {
+    fontSize: 14,
+    color: Colors.light.icon,
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  historyAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.light.primary,
+  },
+  historyDate: {
+    fontSize: 14,
+    color: Colors.light.icon,
+  },
+  historyDetail: {
+    marginBottom: 8,
+  },
+  historyDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  historyDetailLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  historyDetailInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  historyOrgName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.primary,
+  },
+  historyOrgCategory: {
+    fontSize: 12,
+    color: Colors.light.icon,
+    textTransform: 'capitalize',
+  },
+  historyDetailAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.accent,
   },
 });

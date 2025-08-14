@@ -27,10 +27,10 @@ router.post('/signup', async (req: Request, res: Response) => {
   const user = data?.[0];
   const { error: walletError } = await supabase.from('wallets').insert([{ 
     user_id: user.id,
-    base_purse: 100, // Give new users 100 RDM to start with
-    reward_purse: 0,
-    remorse_purse: 0,
-    charity_purse: 0
+    base_purse: 100.00, // Give new users 100 RDM to start with
+    reward_purse: 0.00,
+    remorse_purse: 0.00,
+    charity_purse: 0.00
   }]);
 
   if (walletError) {

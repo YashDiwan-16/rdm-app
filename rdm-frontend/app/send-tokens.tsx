@@ -351,7 +351,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} RDM</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -393,7 +393,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} RDM</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -443,7 +443,7 @@ export default function SendTokensScreen() {
                 />
                 {fromPurse && (
                   <ThemedText style={styles.balanceHint}>
-                    Available: {formatAmount(getSelfTransferPurses().find(p => p.key === fromPurse)?.balance || 0)} tokens
+                    Available: {formatAmount(getSelfTransferPurses().find(p => p.key === fromPurse)?.balance || 0)} RDM
                   </ThemedText>
                 )}
               </View>
@@ -489,7 +489,7 @@ export default function SendTokensScreen() {
                           <View style={[styles.purseIndicator, { backgroundColor: purse.color }]} />
                           <View style={styles.purseInfo}>
                             <ThemedText style={styles.purseName}>{purse.name}</ThemedText>
-                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} tokens</ThemedText>
+                            <ThemedText style={styles.purseBalance}>{formatAmount(purse.balance)} RDM</ThemedText>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -539,7 +539,7 @@ export default function SendTokensScreen() {
                 />
                 {fromPurse && (
                   <ThemedText style={styles.balanceHint}>
-                    Available: {formatAmount(getFromPurses().find(p => p.key === fromPurse)?.balance || 0)} tokens
+                    Available: {formatAmount(getFromPurses().find(p => p.key === fromPurse)?.balance || 0)} RDM
                   </ThemedText>
                 )}
               </View>
