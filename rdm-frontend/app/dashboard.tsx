@@ -68,7 +68,7 @@ export default function DashboardScreen() {
       const response = await goalsAPI.createCustomGoal({
         name: newTask.name,
         description: newTask.description,
-        associated_tokens: 10, // Default bonus token value
+        associated_tokens: 0, // No bonus tokens - only redistribute pledged amount
         pledge_amount: newTask.pledge_amount,
         target_time: newTask.target_time,
       });
@@ -366,7 +366,6 @@ export default function DashboardScreen() {
       <Modal
         visible={showCreateTask}
         animationType="slide"
-        presentationStyle="pageSheet"
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -452,7 +451,6 @@ export default function DashboardScreen() {
       <Modal
         visible={showCalendar}
         animationType="slide"
-        presentationStyle="pageSheet"
         transparent={true}
       >
         <View style={styles.calendarModalOverlay}>

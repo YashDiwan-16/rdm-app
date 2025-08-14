@@ -63,6 +63,19 @@ export default function SendTokensScreen() {
     try {
       setHistoryLoading(true);
       const history = await walletAPI.getTransactionHistory();
+      
+      // Debug: Log charity transactions to see what data we get
+      const charityTxs = history.filter((t: any) => t.charity_info?.is_charity_transfer);
+      if (charityTxs.length > 0) {
+        console.log('🔍 Frontend received charity transactions:', charityTxs.map((t: any) => ({
+          id: t.id,
+          from_purse: t.from_purse,
+          to_purse: t.to_purse,
+          charity_info: t.charity_info,
+          amount: t.amount
+        })));
+      }
+      
       setTransactionHistory(history);
     } catch (error) {
       console.error('Error loading transaction history:', error);
@@ -566,7 +579,6 @@ export default function SendTokensScreen() {
       <Modal
         visible={showHistory}
         animationType="slide"
-        presentationStyle="pageSheet"
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -609,19 +621,35 @@ export default function SendTokensScreen() {
                   <View style={styles.historyDetail}>
                     <View style={styles.historyInfo}>
                       <ThemedText style={styles.historyType}>
-                        {transaction.type === 'charity-donation' ? (
-                          `❤️ Donated to ${transaction.charity_info?.organization_name || 'Charity'}`
-                        ) : transaction.to_purse === 'charity-donated' ? (
-                          `🎁 Charity Donation`
-                        ) : transaction.is_self_transfer ? (
-                          transaction.to_purse === 'charity' ? 
-                            `💝 Moved to Charity Purse` : 
-                            `💼 ${transaction.from_purse?.replace('_', ' ')} → ${transaction.to_purse?.replace('_', ' ')}`
-                        ) : transaction.is_sent ? (
-                          `📤 Sent to ${transaction.other_party_email || 'Someone'}`
-                        ) : (
-                          `📥 Received from ${transaction.other_party_email || 'Someone'}`
-                        )}
+                        {(() => {
+                          // Debug logging for this specific transaction
+                          const isCharityTransfer = transaction.charity_info?.is_charity_transfer;
+                          if (transaction.is_self_transfer && transaction.from_purse === 'base' && transaction.to_purse === 'base') {
+                            console.log('🔍 Checking transaction:', {
+                              id: transaction.id,
+                              from_purse: transaction.from_purse,
+                              to_purse: transaction.to_purse,
+                              charity_info: transaction.charity_info,
+                              is_charity_transfer: isCharityTransfer
+                            });
+                          }
+                          
+                          if (transaction.type === 'charity-donation') {
+                            return `❤️ Donated to ${transaction.charity_info?.organization_name || 'Charity'}`;
+                          } else if (transaction.to_purse === 'charity-donated') {
+                            return `🎁 Charity Donation`;
+                          } else if (transaction.is_self_transfer) {
+                            if (transaction.to_purse === 'charity' || transaction.to_purse === 'charity_purse' || isCharityTransfer) {
+                              return `💝 Moved to Charity Purse`;
+                            } else {
+                              return `💼 ${transaction.from_purse?.replace('_', ' ')} → ${transaction.to_purse?.replace('_', ' ')}`;
+                            }
+                          } else if (transaction.is_sent) {
+                            return `📤 Sent to ${transaction.other_party_email || 'Someone'}`;
+                          } else {
+                            return `📥 Received from ${transaction.other_party_email || 'Someone'}`;
+                          }
+                        })()}
                       </ThemedText>
                       <ThemedText style={styles.historyTime}>
                         {new Date(transaction.created_at).toLocaleTimeString()}
@@ -637,7 +665,7 @@ export default function SendTokensScreen() {
                         <ThemedText style={styles.charityBadgeText}>DONATED</ThemedText>
                       </View>
                     )}
-                    {transaction.to_purse === 'charity' && transaction.is_self_transfer && (
+                    {(transaction.to_purse === 'charity' || transaction.to_purse === 'charity_purse' || transaction.charity_info?.is_charity_transfer) && transaction.is_self_transfer && (
                       <View style={[styles.charityBadge, { backgroundColor: '#059669' }]}>
                         <ThemedText style={styles.charityBadgeText}>TO CHARITY</ThemedText>
                       </View>

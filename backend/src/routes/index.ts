@@ -348,17 +348,17 @@ router.post('/goals/reflect', authMiddleware, async (req: AuthRequest, res: Resp
 
     switch (reflection_status) {
       case 'done':
-        // All pledge + associated tokens go to reward purse
-        walletUpdates.reward_purse = wallet.reward_purse + pledgeAmount + goal.associated_tokens;
-        message = `Excellent! ${pledgeAmount + goal.associated_tokens} RDM moved to your Reward Purse.`;
+        // All pledge tokens go to reward purse
+        walletUpdates.reward_purse = wallet.reward_purse + pledgeAmount;
+        message = `Excellent! ${pledgeAmount} RDM moved to your Reward Purse.`;
         break;
       
       case 'partly done':
-        // Split pledge 50:50 between reward and remorse, associated tokens to reward
-        const halfPledge = Math.floor(pledgeAmount / 2);
-        walletUpdates.reward_purse = wallet.reward_purse + halfPledge + goal.associated_tokens;
-        walletUpdates.remorse_purse = wallet.remorse_purse + (pledgeAmount - halfPledge);
-        message = `${halfPledge} RDM to Reward Purse, ${pledgeAmount - halfPledge} RDM to Remorse Purse, plus ${goal.associated_tokens} bonus RDM to Reward Purse.`;
+        // Split pledge 50:50 between reward and remorse
+        const halfPledge = pledgeAmount / 2;
+        walletUpdates.reward_purse = wallet.reward_purse + halfPledge;
+        walletUpdates.remorse_purse = wallet.remorse_purse + halfPledge;
+        message = `${halfPledge} RDM to Reward Purse, ${halfPledge} RDM to Remorse Purse.`;
         break;
       
       case 'not done':
@@ -446,25 +446,58 @@ router.post('/wallet/transfer', authMiddleware, async (req: AuthRequest, res: Re
 
       // Enhanced charity info for transfers to charity purse
       let enhancedCharityInfo = charity_info;
+      let actualToPurse = to_purse;
+      
       if (to_purse === 'charity') {
+        // Use 'base' as placeholder since constraint only allows base/reward/remorse
+        // But mark it specially with charity_info so frontend can identify it
+        actualToPurse = 'base';
         enhancedCharityInfo = {
           ...charity_info,
           transfer_type: 'to_charity_purse',
           ready_for_donation: true,
+          is_charity_transfer: true,
+          actual_to_purse: 'charity',
           description: `Moved ${preciseAmount} RDM to charity purse for future donations`
         };
       }
 
       // Record the transaction
-      await supabase.from('transactions').insert([{
+      console.log('🔄 Recording transaction:', {
         sender_id,
         receiver_id: sender_id,
         from_purse,
-        to_purse,
+        to_purse: actualToPurse,
+        amount: preciseAmount,
+        type,
+        charity_info: enhancedCharityInfo
+      });
+      
+      const { error: transactionError } = await supabase.from('transactions').insert([{
+        sender_id,
+        receiver_id: sender_id,
+        from_purse,
+        to_purse: actualToPurse,
         amount: preciseAmount,
         type,
         charity_info: enhancedCharityInfo
       }]);
+
+      if (transactionError) {
+        console.error('❌ Transaction recording failed:', transactionError);
+        console.error('Failed transaction data:', {
+          sender_id,
+          receiver_id: sender_id,
+          from_purse,
+          to_purse,
+          amount: preciseAmount,
+          type,
+          charity_info: enhancedCharityInfo
+        });
+        // Don't fail the transfer, but log the error
+      } else {
+        console.log('✅ Transaction recorded successfully');
+      }
 
       const message = to_purse === 'charity' ? 
         `Successfully moved ${preciseAmount} tokens to Charity Purse - ready for donations!` :
@@ -1092,6 +1125,26 @@ router.get('/wallet/transactions', authMiddleware, async (req: AuthRequest, res:
     }
 
     console.log('📊 Found transactions:', transactions?.length || 0);
+    
+    // Log charity-related transactions for debugging
+    const charityTransactions = transactions?.filter(t => 
+      t.to_purse === 'charity' || 
+      t.to_purse === 'charity_purse' || 
+      t.from_purse === 'charity' || 
+      t.from_purse === 'charity_purse' ||
+      t.charity_info?.is_charity_transfer
+    );
+    console.log('💝 Charity-related transactions:', charityTransactions?.length || 0);
+    if (charityTransactions && charityTransactions.length > 0) {
+      console.log('Charity transaction details:', charityTransactions.map(t => ({
+        id: t.id,
+        from_purse: t.from_purse,
+        to_purse: t.to_purse,
+        amount: t.amount,
+        type: t.type,
+        created_at: t.created_at
+      })));
+    }
 
     // Format the transactions for the frontend (keep decimal values)
     const formattedTransactions = transactions?.map(transaction => ({
@@ -1107,6 +1160,18 @@ router.get('/wallet/transactions', authMiddleware, async (req: AuthRequest, res:
       other_party_email: null, // Will be null for now since we removed the join
       charity_info: transaction.charity_info
     })) || [];
+
+    // Debug: Log charity transactions being sent to frontend
+    const charityTxsToSend = formattedTransactions.filter(t => t.charity_info?.is_charity_transfer);
+    if (charityTxsToSend.length > 0) {
+      console.log('📤 Sending charity transactions to frontend:', charityTxsToSend.map(t => ({
+        id: t.id,
+        from_purse: t.from_purse,
+        to_purse: t.to_purse,
+        charity_info: t.charity_info,
+        amount: t.amount
+      })));
+    }
 
     res.json(formattedTransactions);
   } catch (error: any) {
